@@ -11,19 +11,7 @@ Thanks for helping. Token Observatory stays small on purpose: one Python process
 
 ## Layout
 
-| Path | Purpose |
-|---|---|
-| `server.py` | Log discovery, parsing, HTTP API (`/api/usage`, `/api/history/<day>`, `/api/health`) |
-| `codex_usage.py` | Codex accounting helpers |
-| `archive.py` | Daily JSON snapshots, written atomically with private permissions |
-| `index.html`, `app.js`, `style.css`, `logo.svg` | Dashboard UI |
-| `build_app.py`, `launch-app.sh` | macOS app bundle and its launcher |
-| `scripts/token-observatory` | Portable launcher (Linux install, or run from a checkout) |
-| `launcher.py` | Start-once launcher with `--stop`; entry point of the standalone builds |
-| `packaging/` | PyInstaller spec, icons, `.deb` builder and release notes |
-| `.github/workflows/release.yml` | Builds macOS, Linux and Windows releases |
-| `install.sh`, `uninstall.sh` | Per-user install and removal |
-| `test_*.py`, `test_app.js` | Tests |
+See [DEVELOPMENT.md](DEVELOPMENT.md#repository-layout) for the repository layout, how the numbers are calculated, and how to build and release.
 
 ## Development
 
@@ -44,16 +32,8 @@ node test_app.js
 
 When you change parsing, add a test with a small synthetic log line next to the existing ones in `test_server.py` or `test_codex_usage.py`. Never commit real session logs: they contain prompts and file paths. `.gitignore` already excludes `*.jsonl` and `*.json`.
 
-## Releases
-
-1. Bump `VERSION` in `launcher.py`.
-2. Optionally run **Release** manually from the Actions tab to build and smoke-test all three platforms.
-3. Tag and push: `git tag v1.2.3 && git push origin v1.2.3`. The workflow checks that the tag matches `VERSION`, builds on macOS, Ubuntu and Windows runners, and publishes the release with checksums.
-
-To build locally: `pip install pyinstaller==6.11.1`, then `pyinstaller --noconfirm packaging/token_observatory.spec`. The `.deb` step (`python3 packaging/build_deb.py dist/token-observatory <version> out.deb`) needs `dpkg-deb`.
-
 ## Pull requests
 
 - Keep changes focused. Use one pull request per fix or feature.
 - Use conventional commit prefixes: `feat:`, `fix:`, `docs:`, `test:`, `refactor:`, `chore:`.
-- If a change affects what a number means, describe it in the pull request and update the "Accounting and limits" section of `README.md`.
+- If a change affects what a number means, describe it in the pull request and update the "Accounting" section of `DEVELOPMENT.md` and add a line to `CHANGELOG.md`.

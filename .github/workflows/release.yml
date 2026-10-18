@@ -106,4 +106,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           (cd assets && sha256sum * > SHA256SUMS.txt)
-          gh release create "$GITHUB_REF_NAME" assets/* --title "Token Observatory $GITHUB_REF_NAME" --notes-file packaging/release-notes.md
+          # Release notes: this version's CHANGELOG section, then the install guide.
+          version="${GITHUB_REF_NAME#v}"
+          { head -n 2 packaging/release-notes.md; echo "## What's new"; awk -v v="$version" '/^## \[/{found = index($0, "[" v "]") > 0; next} /^\[/{found = 0} found' CHANGELOG.md; tail -n +3 packaging/release-notes.md; } > notes.md
+          gh release create "$GITHUB_REF_NAME" assets/* --title "Token Observatory $GITHUB_REF_NAME" --notes-file notes.md
