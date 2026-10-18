@@ -41,10 +41,13 @@ class Archive:
                 self.directory.mkdir(parents=True, exist_ok=True, mode=0o700)
                 body = dict(snapshot, schema_version=1)
                 current_ids = {session.get('id') for session in snapshot['sessions']}
+                current_sources = {source for session in snapshot['sessions']
+                                   for source in session.get('source_files', [session.get('source')])}
                 previous = []
                 if (self.directory / (day + '.json')).exists():
                     previous = self.load(day)['sessions']
-                retained = [session for session in previous if session.get('id') and session['id'] not in current_ids]
+                retained = [session for session in previous if session.get('id') and session['id'] not in current_ids
+                            and session.get('source') not in current_sources]
                 body['sessions'] = [dict(session, last_observed_at=snapshot['at']) for session in snapshot['sessions']] + retained
                 descriptor, temporary = tempfile.mkstemp(prefix='.snapshot-', suffix='.tmp', dir=self.directory)
                 with os.fdopen(descriptor, 'w', encoding='utf-8') as stream:

@@ -52,8 +52,8 @@ class AccountingTests(unittest.TestCase):
                 total_token_usage=dict(input_tokens=input_count,cached_input_tokens=50,output_tokens=output_count),
                 last_token_usage=dict(input_tokens=80,output_tokens=10),model_context_window=1000))))
         result=log.export({})
-        self.assertEqual(result['totals']['total'],230)
-        self.assertEqual(len(result['events']),2)
+        self.assertEqual(result['totals']['total'],120)
+        self.assertEqual(len(result['events']),1)
         self.assertEqual(result['context'],90)
         self.assertEqual(result['capacity'],1000)
 

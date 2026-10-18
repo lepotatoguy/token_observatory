@@ -10,6 +10,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 from archive import Archive, DEFAULT_DATA
+from codex_usage import merge_threads
 
 HERE = Path(__file__).resolve().parent
 FIELDS = ('input', 'cached', 'write', 'output', 'reasoning')
@@ -64,6 +65,12 @@ class Log:
         self.cost_usage = None
         self.subagent = 'subagents' in path.parts
         self.parent = None
+        self.metadata_seen = False
+        self.conversation_id = None
+        self.latest_usage = None
+        self.latest_usage_at = None
+        self.counter_snapshots = []
+        self.compaction_marks = set()
 
     def refresh(self):
         stat = self.path.stat()
@@ -94,23 +101,32 @@ class Log:
             self.project = Path(cwd).name
         if self.provider == 'codex':
             payload = data.get('payload') or {}
-            if kind == 'session_meta':
+            if kind == 'session_meta' and not self.metadata_seen:
+                self.metadata_seen = True
                 self.session_id = payload.get('id', self.session_id)
                 self.project = Path(payload.get('cwd') or '').name
                 self.parent = payload.get('forked_from_id')
                 source = payload.get('source', {})
                 self.subagent = isinstance(source, dict) and 'subagent' in source
+                self.subagent = self.subagent or payload.get('thread_source') == 'subagent'
+                self.parent = payload.get('parent_thread_id') or self.parent
+                self.conversation_id = (payload.get('session_id') or self.parent or self.session_id) if self.subagent else self.session_id
             elif kind == 'turn_context':
                 self.model = payload.get('model') or self.model
                 self.models.add(self.model)
             elif kind == 'compacted':
                 self.compactions += 1
+                self.compaction_marks.add(str(data.get('timestamp') or self.compactions))
             elif kind == 'event_msg' and payload.get('type') == 'token_count':
+                owner = payload.get('thread_id')
+                if (owner and owner != self.session_id) or (self.subagent and owner != self.session_id):
+                    return
                 self.rate_limits = payload.get('rate_limits') or self.rate_limits
                 info = payload.get('info') or {}
                 usage = info.get('total_token_usage')
                 if usage is not None:
                     current = tokens(usage)
+                    self.counter_snapshots.append(dict(at=stamp, model=self.model, **current))
                     reset = total(current) < total(self.previous)
                     delta = {k: max(0, current[k]-(0 if reset else self.previous[k])) for k in FIELDS}
                     if total(delta):
@@ -119,11 +135,22 @@ class Log:
                 last = info.get('last_token_usage')
                 if last:
                     self.context = number(last.get('input_tokens')) + number(last.get('output_tokens'))
+                    self.latest_usage = tokens(last)
+                    self.latest_usage_at = stamp
                 self.capacity = info.get('model_context_window') or self.capacity
             elif kind == 'token_usage_record':
+                if payload.get('thread_id') and payload['thread_id'] != self.session_id:
+                    return
                 key = payload.get('response_id')
                 if key and payload.get('usage'):
-                    self.records[key] = dict(at=stamp, model=self.model, **tokens(payload['usage']))
+                    usage = tokens(payload['usage'])
+                    old = self.records.get(key)
+                    if old:
+                        usage = {k: max(usage[k], old[k]) for k in FIELDS}
+                    self.records[key] = dict(id=key, thread_id=self.session_id, at=stamp, model=self.model, **usage)
+                    if self.latest_usage_at is None or (stamp is not None and stamp >= self.latest_usage_at):
+                        self.latest_usage, self.latest_usage_at = usage, stamp
+                        self.context = total(usage)
         else:
             if self.subagent and data.get('sessionId'):
                 # Subagent transcripts record the parent chat's session ID.
@@ -156,7 +183,7 @@ class Log:
                 self.cost_usage = data.get('modelUsage') or None
 
     def export(self, titles):
-        events = self.codex_events if self.codex_events else list(self.records.values())
+        events = list(self.records.values()) if self.records else self.codex_events
         if self.provider == 'claude':
             events = list(self.messages.values())
             if not events and self.cost_usage:
@@ -169,7 +196,7 @@ class Log:
                         'output_tokens_details': {'thinking_tokens': usage.get('thinkingTokens')},
                     }, True)))
         sums = {k: sum(e[k] for e in events) for k in FIELDS}
-        return dict(id=f'{self.provider}:{self.path}', session_id=self.session_id,
+        result = dict(id=f'{self.provider}:{self.path}', session_id=self.session_id,
                     provider=self.provider, title=titles.get(self.session_id) or self.title or titles.get(self.parent) or self.project or self.path.stem,
                     project=self.project, model=self.model, models=sorted(self.models),
                     last=self.last, modified=self.modified, subagent=self.subagent, parent=self.parent,
@@ -177,8 +204,13 @@ class Log:
                     context=self.context, capacity=self.capacity, compactions=self.compactions,
                     rate_limits=self.rate_limits, reported_cost=self.cost,
                     source=str(self.path), parse_errors=self.errors,
-                    usage_source='cumulative token_count' if self.codex_events else
+                    usage_source='cumulative token_count' if self.codex_events and not self.records else
                     ('response usage' if events and (self.records or self.messages) else 'cost-state' if events else 'unavailable'))
+        if self.provider == 'codex':
+            result.update(conversation_id=self.conversation_id or self.session_id,
+                          latest_usage=self.latest_usage, latest_usage_at=self.latest_usage_at,
+                          _counters=self.counter_snapshots, _compactions=sorted(self.compaction_marks))
+        return result
 
 
 class Store:
@@ -228,10 +260,10 @@ class Store:
             # Read every log before export so subagents can show their parent chat's title.
             titles.update((log.session_id, log.title) for log in logs if log.provider == 'claude' and log.title and not log.subagent)
             sessions = [log.export(titles) for log in logs]
-            sessions.sort(key=lambda s: s['last'] or s['modified'], reverse=True)
-            self.snapshot = dict(at=time.time(), sessions=sessions, sources=sources, warnings=warnings)
+            signature = tuple((s['id'], s['modified'], s['title']) for s in sessions)
+            sessions = merge_threads(sessions)
+            self.snapshot = dict(at=time.time(), sessions=sessions, sources=sources, warnings=warnings, accounting_version=2)
             if self.archive:
-                signature = tuple((s['id'], s['modified'], s['title']) for s in sessions)
                 self.snapshot['archive'] = self.archive.update(self.snapshot, signature, force=force_save)
                 if self.snapshot['archive']['error']:
                     warnings.append(self.snapshot['archive']['error'])
