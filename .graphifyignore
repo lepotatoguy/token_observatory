@@ -1,0 +1,9 @@
+dashboard.jpg
+dashboard-v2.jpg
+*.json
+*.app/
+
+private/
+dist/
+*.jpg
+*.png

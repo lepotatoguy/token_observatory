@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Token Observatory</title>
+  <meta name="description" content="Live, local token telemetry for Claude Code and Codex chats.">
+  <link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script>
+</head>
+<body>
+<aside class="sidebar">
+  <a class="brand" href="/" aria-label="Token Observatory home"><span class="brand-icon">◒</span><span>Token<br><strong>Observatory</strong></span></a>
+  <div class="nav-caption">WORKSPACE</div>
+  <div class="nav-active"><span>▦</span> Overview <span class="nav-dot"></span></div>
+  <button class="nav-button" id="sourcesButton"><span>⌘</span> Data sources</button>
+  <div class="sidebar-note"><span class="tiny-dot"></span> LOCAL TELEMETRY<p>Your logs. Your machine.<br>No uploads or API keys.</p></div>
+  <div class="sidebar-bottom"><span class="avatar">TO</span><span>Personal workspace<small>Loopback connection</small></span></div>
+</aside>
+<main>
+  <header><div class="breadcrumb">Workspace <span>/</span> Overview</div><div class="connection"><span id="connectionDot" class="tiny-dot"></span><span id="connectionText" role="status">Reading local logs</span><button id="pauseButton" class="quiet">Pause</button></div></header>
+  <div class="page">
+    <div class="page-heading"><div><div class="eyebrow">EVERY TOKEN, ACCOUNTED FOR</div><h1>Usage overview<span class="heading-dot">.</span></h1><p>Follow token consumption across your coding conversations.</p></div><div class="export-actions"><button id="jsonButton" class="button">↓ <span>Export JSON</span></button><button id="exportButton" class="button">↓ <span>Export CSV</span></button></div></div>
+    <div class="toolbar"><div class="segmented" aria-label="Provider filter"><button data-provider="all" class="selected">All providers</button><button data-provider="claude">✳ Claude Code</button><button data-provider="codex">◈ Codex</button></div><div class="toolbar-right"><label class="agent-toggle"><input type="checkbox" id="agents" checked> Include subagents</label><label class="sr-only" for="range">Time range</label><label class="sr-only" for="history">Saved history</label><select id="history"><option value="">Live</option></select><select id="range"><option value="today" selected>Today</option><option value="48h">Last 48 hours</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option><option value="all">All retained logs</option></select></div></div>
+    <div id="warning" class="warning" hidden></div>
+    <section class="metrics" aria-label="Token totals" id="metrics"><div class="metric"><span>Total tokens</span><strong>…</strong><small>Reading recorded telemetry</small></div></section>
+    <section class="panel activity-panel"><div class="panel-heading"><div><h2>Token activity</h2><p id="activityDescription">Recorded input and output over time</p></div><div class="chart-legend"><span><i class="swatch input"></i>Input incl. cache</span><span><i class="swatch output"></i>Output</span></div></div><div id="chart" class="chart" aria-label="Token activity chart"></div><div class="chart-footer"><span id="chartRange">Waiting for data</span><span>From local usage records</span></div></section>
+    <div class="lower-grid">
+      <section class="panel sessions-panel"><div class="panel-heading"><div><h2>Conversations <span class="count" id="sessionCount">0</span></h2><p>Select a chat to inspect its usage.</p></div><label class="search"><span>⌕</span><input type="search" id="search" placeholder="Search chats or models" aria-label="Search chats or models"></label></div><div class="table-wrap"><table><thead><tr><th>Conversation</th><th><button id="sortButton">Tokens ↓</button></th><th>Last activity</th></tr></thead><tbody id="sessions"></tbody></table></div><div class="table-footer" id="tableFooter">Logs update after each recorded response.</div></section>
+      <section class="panel inspector" id="inspector" aria-label="Selected conversation"><div class="empty-state">Select a conversation to see details.</div></section>
+    </div>
+    <footer><span class="collector-status"><span><i class="tiny-dot"></i> Read-only local collector · checks every 2 seconds</span><span id="jsonStatus" class="json-status" role="status">JSON auto-save starts with the collector.</span></span><span id="updated">Waiting for first scan</span></footer>
+  </div>
+</main>
+<dialog id="sourcesDialog"><div class="dialog-head"><h2>Data sources & accuracy</h2><button id="closeSources" class="quiet" aria-label="Close data sources">✕</button></div><div id="sourceList"></div><div class="accuracy"><p id="archiveInfo"></p><h3>What these numbers mean</h3><p>Totals sum recorded fresh input, cached input, cache writes, and output. Reasoning is a subset of output and is never added twice.</p><p>Codex uses cumulative token_count deltas, with response usage as a fallback. Claude Code deduplicates response usage across content blocks. Cost-state is a fallback when response usage is absent.</p><p>Context shows input plus output from the latest recorded response. Codex capacity comes from its log. Claude capacity, compaction thresholds, and system/tool/memory/skill token categories are unavailable unless explicitly recorded.</p><p>Time filters use usage-event timestamps in your browser’s local timezone. Undated cost-state totals appear only in “All retained logs”. Logs can be incomplete. Forks may include inherited usage; summed chat totals can overlap. “Recent” means a log changed within five minutes, not that a model is generating.</p><p>Reported cost comes from Claude’s cost-state, when present. It is not a subscription bill. No inferred prices or currency estimates.</p><p>Consumer ChatGPT and Claude browser chats are outside this local collector. Source logs are read only; no settings or proxy configuration are changed.</p><p><a href="https://learn.chatgpt.com/docs/app-server" target="_blank" rel="noreferrer">OpenAI usage telemetry</a> · <a href="https://code.claude.com/docs/en/monitoring-usage" target="_blank" rel="noreferrer">Claude Code monitoring</a></p></div></dialog>
+</body></html>

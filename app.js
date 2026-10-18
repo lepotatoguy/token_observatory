@@ -1,0 +1,182 @@
+'use strict';
+const $ = id => document.getElementById(id);
+const state = {data:null, provider:'all', selected:null, paused:false, sort:'tokens', fetching:false, history:'', archive:null};
+const nowSeconds = () => state.history && state.data ? state.data.at : Date.now()/1000;
+const fields = ['input','cached','write','output'];
+const colors = ['#8caa77','#aaa0c5','#88a6b5','#d9916b'];
+const labels = ['Fresh input','Cache read','Cache write','Output'];
+const exact = n => Number(n || 0).toLocaleString();
+const compact = n => n >= 1e9 ? `${(n/1e9).toFixed(2)}B` : n >= 1e6 ? `${(n/1e6).toFixed(2)}M` : n >= 1e3 ? `${(n/1e3).toFixed(1)}k` : exact(n);
+const escapeHTML = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const date = at => at ? new Date(at*1000).toLocaleString() : 'Timestamp unavailable';
+const eventTotal = e => fields.reduce((sum,k) => sum+(e[k] || 0),0);
+const providerName = p => p === 'codex' ? 'Codex' : 'Claude Code';
+const sum = events => Object.fromEntries([...fields,'reasoning','total'].map(k => [k,events.reduce((a,e) => a+(k === 'total' ? eventTotal(e) : e[k] || 0),0)]));
+
+function cutoff() {
+  const range = $('range').value;
+  if (range === 'all') return 0;
+  const now = new Date(nowSeconds()*1000);
+  if (range === 'today') { now.setHours(0,0,0,0); return now.getTime()/1000; }
+  return nowSeconds()-(range==='48h' ? 48*3600 : Number(range)*86400);
+}
+function scoped() {
+  if (!state.data) return [];
+  const since = cutoff();
+  return state.data.sessions.filter(s => (state.provider === 'all' || s.provider === state.provider) && ($('agents').checked || !s.subagent))
+    .map(s => {const events=s.events.filter(e => !since || (e.at !== null && e.at >= since)); return {...s,events,scope:sum(events)};})
+    .filter(s => !since || s.events.length || (s.last && s.last >= since));
+}
+function relative(at) {
+  if (!at) return 'Undated';
+  const seconds=Math.max(0,Math.floor(nowSeconds()-at));
+  if (seconds<60) return 'Just now';
+  if (seconds<3600) return `${Math.floor(seconds/60)}m ago`;
+  if (seconds<86400) return `${Math.floor(seconds/3600)}h ago`;
+  return new Date(at*1000).toLocaleDateString(undefined,{month:'short',day:'numeric'});
+}
+function stat(label,value,note,icon) {
+  return `<div class="metric"><span>${label}</span><span class="metric-icon">${icon}</span><strong title="${exact(value)}">${compact(value)}</strong><small>${note}</small></div>`;
+}
+function render() {
+  if (!state.data) return;
+  const sessions=scoped(), events=sessions.flatMap(s => s.events), totals=sum(events);
+  const cacheInput=totals.input+totals.cached+totals.write;
+  const hit=cacheInput ? (100*totals.cached/cacheInput).toFixed(1) : '0.0';
+  const missing=sessions.filter(s=>s.usage_source==='unavailable').length;
+  $('metrics').innerHTML=stat('Recorded tokens',totals.total,`${exact(sessions.length)} chats · ${missing} unreported`,'◈')+
+    stat('Input tokens',cacheInput,'Fresh input + cache reads + writes','↗')+
+    stat('Output tokens',totals.output,`${exact(totals.reasoning)} recorded reasoning tokens included`,'↙')+
+    `<div class="metric"><span>Cache read share</span><span class="metric-icon">◴</span><strong>${hit}<span style="font-size:17px">%</span></strong><small title="${exact(totals.cached)} cached tokens">${compact(totals.cached)} input tokens served from cache</small></div>`;
+  renderChart(events);
+  const query=$('search').value.toLowerCase();
+  const visible=sessions.filter(s => `${s.title} ${s.model} ${s.project} ${s.session_id}`.toLowerCase().includes(query));
+  visible.sort((a,b) => state.sort==='tokens' ? b.scope.total-a.scope.total : (b.last || 0)-(a.last || 0));
+  $('sessionCount').textContent=exact(visible.length);
+  if (!visible.some(s => s.id===state.selected)) state.selected=visible.reduce((latest,s)=>(s.last || 0)>(latest?.last || 0)?s:latest,null)?.id || visible[0]?.id || null;
+  $('sessions').innerHTML=visible.length ? visible.map(s => `<tr tabindex="0" data-id="${escapeHTML(s.id)}" class="${s.id===state.selected?'active':''}" aria-selected="${s.id===state.selected}"><td><div class="conversation"><span class="provider-icon ${s.provider}">${s.provider==='claude'?'✳':'◈'}</span><div><div class="conversation-title" title="${escapeHTML(s.title)}">${escapeHTML(s.title)}</div><div class="conversation-sub">${escapeHTML(s.model)}${s.subagent?' · subagent':''}${s.last && Date.now()/1000-s.last<300?' · recent':''}</div></div></div></td><td class="token-number" title="${exact(s.scope.total)}">${s.usage_source==='unavailable'?'Unreported':compact(s.scope.total)}</td><td class="relative" title="${escapeHTML(date(s.last))}">${relative(s.last)}</td></tr>`).join('') : '<tr><td colspan="3"><div class="empty-state">No chats match these filters.</div></td></tr>';
+  $('tableFooter').textContent=`${exact(visible.length)} chats · ${exact(events.length)} usage updates · select a row for details`;
+  renderInspector(visible.find(s => s.id===state.selected));
+  $('updated').textContent=`${state.history?'Snapshot captured':'Last scan'} ${date(state.data.at)}`;
+  if (state.archive) {
+    const selected=state.history;
+    $('history').innerHTML='<option value="">Live</option>'+state.archive.dates.map(day=>`<option value="${day}">Saved · ${day}</option>`).join('');
+    $('history').value=selected;
+    $('jsonStatus').textContent=state.history ? `Viewing saved history for ${state.history}. Time filters use its capture time.` :
+      (state.archive.error || `JSON auto-save: ${state.archive.saved_at?date(state.archive.saved_at):'first capture pending'} · Latest capture retained for each day`);
+    $('archiveInfo').textContent=`Daily JSON files: ${state.archive.directory}. Updated at most once per minute when logs change. Calendar dates use America/Chicago. Collection continues while the app's local service runs.`;
+  }
+  const errors=state.data.sessions.reduce((n,s) => n+s.parse_errors,0);
+  const warnings=[...state.data.warnings];
+  if(errors) warnings.push(`${exact(errors)} malformed log records skipped.`);
+  $('warning').hidden=!warnings.length;
+  $('warning').textContent=warnings.join(' · ');
+  $('sourceList').innerHTML=state.data.sources.map(s => `<div class="source-item"><strong>${providerName(s.provider)}</strong> · ${exact(s.files)} local log files<code>${escapeHTML(s.path)}</code></div>`).join('');
+}
+function renderChart(events) {
+  const dated=events.filter(e => e.at);
+  if (!dated.length) {$('chart').innerHTML='<div class="empty-state">No timestamped usage in this range.</div>';$('chartRange').textContent='No dated usage';return;}
+  const end=dated.reduce((latest,e)=>Math.max(latest,e.at),nowSeconds());
+  const start=cutoff() || dated.reduce((earliest,e)=>Math.min(earliest,e.at),Infinity);
+  const span=Math.max(60,end-start), count=36;
+  const buckets=Array.from({length:count},()=>({input:0,output:0}));
+  for(const e of dated){const b=buckets[Math.min(count-1,Math.floor((e.at-start)/span*count))];if(!b)continue;b.input+=e.input+e.cached+e.write;b.output+=e.output;}
+  const max=Math.max(1,...buckets.map(b=>b.input+b.output));
+  const width=1000,height=165,left=49,right=10,top=12,bottom=25;
+  const plotHeight=height-top-bottom, step=(width-left-right)/count;
+  let svg=`<svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="${escapeHTML('Token consumption, '+date(start)+' to '+date(end))}">`;
+  for(let i=0;i<4;i++){const y=top+plotHeight*i/3;svg+=`<line x1="${left}" y1="${y}" x2="${width-right}" y2="${y}" stroke="#edf0e7" stroke-dasharray="3 4"/><text x="0" y="${y+3}">${compact(max*(1-i/3))}</text>`;}
+  buckets.forEach((b,i)=>{const x=left+i*step+3,ih=b.input/max*plotHeight,oh=b.output/max*plotHeight;const from=start+span*i/count;svg+=`<g><title>${escapeHTML(date(from))}\nInput: ${exact(b.input)}\nOutput: ${exact(b.output)}</title><rect x="${x}" y="${top+plotHeight-ih}" width="${Math.max(1,step-7)}" height="${ih}" rx="1" fill="#b0c49e"/><rect x="${x}" y="${top+plotHeight-ih-oh}" width="${Math.max(1,step-7)}" height="${oh}" rx="1" fill="#d9916b"/></g>`;});
+  for(let i=0;i<5;i++){const at=start+span*i/4;const text=new Date(at*1000).toLocaleDateString(undefined,{month:'short',day:'numeric'});svg+=`<text x="${left+(width-left-right)*i/4}" y="${height-3}" text-anchor="${i===0?'start':i===4?'end':'middle'}">${escapeHTML(span<172800?new Date(at*1000).toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'}):text)}</text>`;}
+  $('chart').innerHTML=svg+'</svg>';
+  $('chartRange').textContent=`${new Date(start*1000).toLocaleDateString()} to ${new Date(end*1000).toLocaleDateString()}`;
+  $('activityDescription').textContent=`${exact(dated.length)} timestamped usage updates in selected range`;
+}
+function renderInspector(s) {
+  if(!s){$('inspector').innerHTML='<div class="empty-state">Select a conversation to see details.</div>';return;}
+  const expanded=$('inspector').querySelector('details')?.open && $('inspector').dataset.id===s.id;
+  $('inspector').dataset.id=s.id;
+  const usage=s.scope, capacity=s.capacity, context=s.context;
+  const pct=capacity && context!==null ? context/capacity*100:null;
+  const bar=fields.map((k,i)=>`<span style="width:${usage.total?usage[k]/usage.total*100:0}%;background:${colors[i]}"></span>`).join('');
+  const rows=fields.map((k,i)=>`<div class="breakdown-row"><span><i class="swatch" style="background:${colors[i]}"></i>${labels[i]}</span><strong>${s.usage_source==='unavailable'?'Unreported':exact(usage[k])}</strong></div>`).join('');
+  const rate=s.rate_limits;
+  const quota=rate ? ['primary','secondary'].filter(k=>rate[k]).map(k=>{const r=rate[k];return `<div><span>${r.window_minutes===300?'5-hour':r.window_minutes===10080?'Weekly':`${r.window_minutes}-minute`} account quota</span><strong>${r.used_percent ?? 'Unreported'}% used · resets ${escapeHTML(date(r.resets_at))}</strong></div>`;}).join('') : '';
+  const stream=s.events.slice().sort((a,b)=>(b.at || 0)-(a.at || 0)).slice(0,20);
+  $('inspector').innerHTML=`<div class="inspector-label">CONVERSATION INSPECTOR</div><h2>${escapeHTML(s.title)}</h2><div class="meta"><span class="provider-badge ${s.provider}">${providerName(s.provider)}</span> &nbsp; ${escapeHTML(s.model)}</div><div class="context-card"><div class="context-heading"><span>◒ &nbsp; Context window</span><strong>${pct===null?'Capacity unreported':`${pct.toFixed(1)}%`}</strong></div><p>${context===null?'Latest request usage unavailable':`${exact(context)} tokens, latest recorded input + output`}</p><div class="context-track"><span class="context-used" style="width:${pct===null?0:Math.min(100,pct)}%"></span></div><div class="context-footer"><span>${capacity?`${compact(capacity)} logged capacity`:'Window size unreported'}</span><span>${capacity && context!==null ? `${compact(Math.max(0,capacity-context))} free`:'Free space unknown'}</span></div><div class="context-categories">${['System prompt','MCP tools','Tools','Memory files','Skills','Messages'].map(k=>`<span title="No exact token attribution in source log">${k}<b>n/a</b></span>`).join('')}</div></div><div class="breakdown-heading">Token breakdown <span>${s.usage_source==='unavailable'?'Unreported':exact(usage.total)} recorded</span></div><div class="usage-bar">${bar}</div>${rows}<div class="breakdown-row"><span>↳ Reasoning, included in output</span><strong>${s.usage_source==='unavailable'?'Unreported':exact(usage.reasoning)}</strong></div><div class="detail-facts"><div><span>Recorded compactions, lifetime</span><strong>${exact(s.compactions)}</strong></div><div><span>Usage source</span><strong>${escapeHTML(s.usage_source)}</strong></div><div><span>Usage updates in range</span><strong>${exact(s.events.length)}</strong></div><div><span>Lifetime recorded tokens</span><strong>${s.usage_source==='unavailable'?'Unreported':exact(s.totals.total)}</strong></div><div><span>Reported lifetime cost</span><strong>${s.reported_cost===null?'Unreported':`$${s.reported_cost}`}</strong></div>${quota}<div><span>Session ID</span><strong>${escapeHTML(s.session_id)}</strong></div></div><details><summary>Recent usage updates</summary><div class="event-list">${stream.length?stream.map(e=>`<div><span title="${escapeHTML(date(e.at))}">${relative(e.at)}</span><span>${exact(eventTotal(e))} tokens</span></div>`).join(''):'No recorded usage.'}</div><div class="source-path">${escapeHTML(s.source)}</div></details>`;
+  if(expanded)$('inspector').querySelector('details').open=true;
+}
+async function refresh() {
+  if(state.fetching || state.paused || state.history)return;
+  state.fetching=true;
+  try {
+    const response=await fetch('/api/usage',{cache:'no-store'});
+    if(!response.ok)throw new Error(`HTTP ${response.status}`);
+    const data=await response.json();
+    if(state.paused || state.history)return;
+    state.data=data;
+    state.archive=data.archive || null;
+    $('connectionText').textContent='Live · local logs';$('connectionDot').classList.remove('disconnected');
+    render();
+  } catch(error) {
+    $('connectionText').textContent='Collector disconnected';$('connectionDot').classList.add('disconnected');
+    $('warning').hidden=false;$('warning').textContent=`Cannot read collector: ${error.message}. Start server.py and reload. Displayed data may be stale.`;
+  } finally {state.fetching=false;}
+}
+document.querySelectorAll('[data-provider]').forEach(button=>button.addEventListener('click',()=>{state.provider=button.dataset.provider;document.querySelectorAll('[data-provider]').forEach(b=>b.classList.toggle('selected',b===button));render();}));
+['range','agents'].forEach(id=>$(id).addEventListener('change',render));
+$('search').addEventListener('input',render);
+$('sortButton').addEventListener('click',()=>{state.sort=state.sort==='tokens'?'recent':'tokens';$('sortButton').textContent=state.sort==='tokens'?'Tokens ↓':'Recent ↓';render();});
+function selectRow(event){const row=event.target.closest('tr[data-id]');if(row){state.selected=row.dataset.id;render();}}
+$('sessions').addEventListener('click',selectRow);
+$('sessions').addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();selectRow(event);}});
+$('pauseButton').addEventListener('click',()=>{state.paused=!state.paused;$('pauseButton').textContent=state.paused?'Resume':'Pause';$('connectionText').textContent=state.paused?'Paused · snapshot held':'Live · local logs';if(!state.paused)refresh();});
+$('sourcesButton').addEventListener('click',()=>$('sourcesDialog').showModal());
+$('closeSources').addEventListener('click',()=>$('sourcesDialog').close());
+$('history').addEventListener('change',async()=>{
+  const day=$('history').value;
+  state.history=day;
+  state.paused=false;
+  $('pauseButton').disabled=!!day;
+  $('pauseButton').textContent='Pause';
+  if(!day){await refresh();return;}
+  $('connectionText').textContent='Loading saved history';
+  try {
+    const response=await fetch(`/api/history/${encodeURIComponent(day)}`,{cache:'no-store'});
+    if(!response.ok)throw new Error(`HTTP ${response.status}`);
+    const data=await response.json();
+    if(state.history!==day)return;
+    state.data=data;
+    $('connectionText').textContent=`Saved · ${day}`;
+    render();
+  } catch(error) {
+    if(state.history!==day)return;
+    $('connectionText').textContent='History unavailable';
+    $('warning').hidden=false;
+    $('warning').textContent=`Cannot open saved history: ${error.message}. Return to Live to continue.`;
+  }
+});
+function downloadFile(content,type,name) {
+  const url=URL.createObjectURL(new Blob([content],{type}));
+  const a=document.createElement('a');a.href=url;a.download=name;a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+$('jsonButton').addEventListener('click',()=>{
+  if(!state.data)return;
+  const query=$('search').value.toLowerCase();
+  const sessions=scoped().filter(s=>`${s.title} ${s.model} ${s.project} ${s.session_id}`.toLowerCase().includes(query))
+    .map(({scope,...session})=>({...session,filtered_totals:scope}));
+  const payload={schema_version:1,exported_at:new Date().toISOString(),snapshot_at:new Date(state.data.at*1000).toISOString(),
+    filters:{provider:state.provider,range:$('range').value,since:cutoff() || null,include_subagents:$('agents').checked,search:$('search').value,saved_day:state.history || null},
+    sessions,sources:state.data.sources,warnings:state.data.warnings};
+  downloadFile(JSON.stringify(payload,null,2),'application/json',`token-usage-${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.json`);
+});
+$('exportButton').addEventListener('click',()=>{
+  if(!state.data)return;
+  const columns=['provider','title','session_id','model','input','cached','write','output','reasoning','total','last_activity'];
+  // Spreadsheet apps can treat text beginning with these characters as formulas.
+  const cell=value=>{let s=String(value??'');if(/^[=+@\-\t\r\n]/.test(s))s="'"+s;return '"'+s.replace(/"/g,'""')+'"';};
+  const rows=scoped().filter(s=>`${s.title} ${s.model} ${s.project} ${s.session_id}`.toLowerCase().includes($('search').value.toLowerCase())).map(s=>[s.provider,s.title,s.session_id,s.model,...[...fields,'reasoning','total'].map(k=>s.usage_source==='unavailable'?'':s.scope[k]),s.last?new Date(s.last*1000).toISOString():'']);
+  downloadFile('\ufeff'+[columns,...rows].map(row=>row.map(cell).join(',')).join('\r\n'),'text/csv;charset=utf-8',`token-usage-${new Date().toISOString().slice(0,10)}.csv`);
+});
+refresh();setInterval(refresh,2000);
