@@ -28,9 +28,13 @@ def say(message, error=False):
         print(message, file=stream, flush=True)
 
 
+# Loopback checks must never go through a configured HTTP proxy.
+LOCAL = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
 def healthy(url):
     try:
-        with urllib.request.urlopen(url + '/api/health', timeout=1) as response:
+        with LOCAL.open(url + '/api/health', timeout=1) as response:
             return b'"app":"token-observatory"' in response.read()
     except OSError:
         return False
@@ -38,7 +42,9 @@ def healthy(url):
 
 def spawn(port):
     command = [sys.executable] if getattr(sys, 'frozen', False) else [sys.executable, str(Path(__file__).resolve())]
-    options = dict(stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True)
+    options = dict(stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True,
+                   # Without this, a one-file child reuses the parent's unpack folder, deleted when the parent exits.
+                   env=dict(os.environ, PYINSTALLER_RESET_ENVIRONMENT='1'))
     if sys.platform == 'win32':
         options['creationflags'] = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
     else:

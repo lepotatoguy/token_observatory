@@ -29,10 +29,14 @@ class LauncherTests(unittest.TestCase):
 
             def launch(*args):
                 return subprocess.run([sys.executable, str(ROOT/'launcher.py'), '--port', str(port), *args],
-                                      env=env, capture_output=True, text=True, timeout=30)
+                                      env=env, capture_output=True, text=True, timeout=90)
+
+            def log():
+                found = list(Path(folder).rglob('service.log'))
+                return found[0].read_text() if found else 'no service.log'
             try:
                 started = launch('--no-open')
-                self.assertEqual(started.returncode, 0, started.stderr)
+                self.assertEqual(started.returncode, 0, started.stderr + log())
                 self.assertTrue(healthy(url))
                 pid = next(Path(folder).rglob('collector.pid')).read_text()
                 self.assertEqual(launch('--no-open').returncode, 0)

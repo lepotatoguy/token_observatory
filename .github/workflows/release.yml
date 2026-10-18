@@ -23,6 +23,7 @@ jobs:
           - os: windows-latest
             asset: windows-x64.exe
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     defaults:
       run:
         shell: bash
@@ -42,6 +43,7 @@ jobs:
           echo "ASSET=TokenObservatory-$version-${{ matrix.asset }}" >> "$GITHUB_ENV"
       - name: Test
         if: runner.os != 'Windows'
+        timeout-minutes: 10
         run: |
           python -m unittest -v
           node test_app.js
@@ -51,6 +53,7 @@ jobs:
           pyinstaller --noconfirm packaging/token_observatory.spec
       - name: Package and smoke-test (macOS)
         if: runner.os == 'macOS'
+        timeout-minutes: 5
         run: |
           app="dist/Token Observatory.app/Contents/MacOS/TokenObservatory"
           "$app" --no-open --port 8799
@@ -59,6 +62,7 @@ jobs:
           ditto -c -k --keepParent "dist/Token Observatory.app" "$ASSET"
       - name: Package and smoke-test (Linux)
         if: runner.os == 'Linux'
+        timeout-minutes: 5
         run: |
           python packaging/build_deb.py dist/token-observatory "$VERSION" "$ASSET"
           sudo apt-get install -y "./$ASSET"
@@ -68,6 +72,7 @@ jobs:
           token-observatory --stop --port 8799
       - name: Package and smoke-test (Windows)
         if: runner.os == 'Windows'
+        timeout-minutes: 5
         shell: pwsh
         run: |
           Copy-Item dist/token-observatory.exe $env:ASSET
@@ -75,7 +80,7 @@ jobs:
           $launcher = Start-Process -FilePath ./$env:ASSET -ArgumentList '--no-open','--port','8799' -PassThru
           $launcher.WaitForExit()
           if ($launcher.ExitCode -ne 0) { throw "Launcher exited with $($launcher.ExitCode)" }
-          Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8799/ | Out-Null
+          Invoke-WebRequest -UseBasicParsing -TimeoutSec 10 http://127.0.0.1:8799/ | Out-Null
           $stopper = Start-Process -FilePath ./$env:ASSET -ArgumentList '--stop','--port','8799' -PassThru
           $stopper.WaitForExit()
       - uses: actions/upload-artifact@v4
