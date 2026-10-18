@@ -80,6 +80,25 @@ class AccountingTests(unittest.TestCase):
             result=Store(Path(folder)/'codex',Path(folder)/'claude').read()
             self.assertEqual(len(result['warnings']),2)
 
+    def test_claude_subagent_links_to_parent_chat(self):
+        # Desktop Code tab sessions delegate work to subagents, whose usage lands
+        # in <session>/subagents/agent-*.jsonl rather than the chat transcript.
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)
+            project=root/'claude'/'projects'/'project'
+            child=project/'parent-id'/'subagents'/'agent-x.jsonl'
+            child.parent.mkdir(parents=True)
+            (project/'parent-id.jsonl').write_text(json.dumps(dict(type='custom-title',customTitle='My chat'))+'\n')
+            child.write_text(json.dumps(dict(type='assistant',sessionId='parent-id',cwd='/tmp/project',
+                message=dict(id='a',usage=dict(input_tokens=4,output_tokens=1))))+'\n')
+            sessions={s['session_id']:s for s in Store(root/'codex',root/'claude').read()['sessions']}
+            agent=sessions['agent-x']
+            self.assertTrue(agent['subagent'])
+            self.assertEqual(agent['parent'],'parent-id')
+            self.assertEqual(agent['title'],'My chat')
+            self.assertEqual(agent['totals']['total'],5)
+            self.assertIsNone(sessions['parent-id']['parent'])
+
     def test_http_limits_and_live_append(self):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder)

@@ -125,6 +125,9 @@ class Log:
                 if key and payload.get('usage'):
                     self.records[key] = dict(at=stamp, model=self.model, **tokens(payload['usage']))
         else:
+            if self.subagent and data.get('sessionId'):
+                # Subagent transcripts record the parent chat's session ID.
+                self.parent = data['sessionId']
             if kind == 'custom-title':
                 self.title = str(data.get('customTitle') or '')[:180]
             elif kind == 'api-request':
@@ -167,7 +170,7 @@ class Log:
                     }, True)))
         sums = {k: sum(e[k] for e in events) for k in FIELDS}
         return dict(id=f'{self.provider}:{self.path}', session_id=self.session_id,
-                    provider=self.provider, title=titles.get(self.session_id) or self.title or self.project or self.path.stem,
+                    provider=self.provider, title=titles.get(self.session_id) or self.title or titles.get(self.parent) or self.project or self.path.stem,
                     project=self.project, model=self.model, models=sorted(self.models),
                     last=self.last, modified=self.modified, subagent=self.subagent, parent=self.parent,
                     totals=dict(**sums, total=total(sums)), events=events,
@@ -191,7 +194,7 @@ class Store:
         with self.lock:
             if not force_save and self.snapshot and time.monotonic()-self.scanned < 1.5:
                 return self.snapshot
-            sessions, warnings, sources = [], [], []
+            logs, warnings, sources = [], [], []
             titles = {}
             index = self.codex / 'session_index.jsonl'
             if index.exists():
@@ -215,13 +218,16 @@ class Store:
                         try:
                             entry = self.logs.setdefault(str(path), Log(path, provider))
                             entry.refresh()
-                            sessions.append(entry.export(titles))
+                            logs.append(entry)
                             count += 1
                         except OSError as error:
                             warnings.append(f'{provider}: cannot read {path.name}: {error.strerror}')
                 except OSError as error:
                     warnings.append(f'{provider}: discovery failed: {error.strerror}')
                 sources.append(dict(provider=provider, path=str(root), files=count))
+            # Read every log before export so subagents can show their parent chat's title.
+            titles.update((log.session_id, log.title) for log in logs if log.provider == 'claude' and log.title and not log.subagent)
+            sessions = [log.export(titles) for log in logs]
             sessions.sort(key=lambda s: s['last'] or s['modified'], reverse=True)
             self.snapshot = dict(at=time.time(), sessions=sessions, sources=sources, warnings=warnings)
             if self.archive:

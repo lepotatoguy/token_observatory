@@ -1,6 +1,6 @@
 'use strict';
 const $ = id => document.getElementById(id);
-const state = {data:null, provider:'all', selected:null, paused:false, sort:'tokens', fetching:false, history:'', archive:null};
+const state = {data:null, provider:'all', selected:null, paused:false, sort:'tokens', pinned:false, fetching:false, history:'', archive:null};
 const nowSeconds = () => state.history && state.data ? state.data.at : Date.now()/1000;
 const fields = ['input','cached','write','output'];
 const colors = ['#8caa77','#aaa0c5','#88a6b5','#d9916b'];
@@ -53,7 +53,11 @@ function render() {
   const visible=sessions.filter(s => `${s.title} ${s.model} ${s.project} ${s.session_id}`.toLowerCase().includes(query));
   visible.sort((a,b) => state.sort==='tokens' ? b.scope.total-a.scope.total : (b.last || 0)-(a.last || 0));
   $('sessionCount').textContent=exact(visible.length);
-  if (!visible.some(s => s.id===state.selected)) state.selected=visible.reduce((latest,s)=>(s.last || 0)>(latest?.last || 0)?s:latest,null)?.id || visible[0]?.id || null;
+  // Until a row is chosen, follow the newest activity, since each delegated subagent writes a new log.
+  if (!state.pinned || !visible.some(s => s.id===state.selected)) {
+    state.pinned=false;
+    state.selected=visible.reduce((latest,s)=>(s.last || 0)>(latest?.last || 0)?s:latest,null)?.id || visible[0]?.id || null;
+  }
   $('sessions').innerHTML=visible.length ? visible.map(s => `<tr tabindex="0" data-id="${escapeHTML(s.id)}" class="${s.id===state.selected?'active':''}" aria-selected="${s.id===state.selected}"><td><div class="conversation"><span class="provider-icon ${s.provider}">${s.provider==='claude'?'✳':'◈'}</span><div><div class="conversation-title" title="${escapeHTML(s.title)}">${escapeHTML(s.title)}</div><div class="conversation-sub">${escapeHTML(s.model)}${s.subagent?' · subagent':''}${s.last && Date.now()/1000-s.last<300?' · recent':''}</div></div></div></td><td class="token-number" title="${exact(s.scope.total)}">${s.usage_source==='unavailable'?'Unreported':compact(s.scope.total)}</td><td class="relative" title="${escapeHTML(date(s.last))}">${relative(s.last)}</td></tr>`).join('') : '<tr><td colspan="3"><div class="empty-state">No chats match these filters.</div></td></tr>';
   $('tableFooter').textContent=`${exact(visible.length)} chats · ${exact(events.length)} usage updates · select a row for details`;
   renderInspector(visible.find(s => s.id===state.selected));
@@ -127,7 +131,7 @@ document.querySelectorAll('[data-provider]').forEach(button=>button.addEventList
 ['range','agents'].forEach(id=>$(id).addEventListener('change',render));
 $('search').addEventListener('input',render);
 $('sortButton').addEventListener('click',()=>{state.sort=state.sort==='tokens'?'recent':'tokens';$('sortButton').textContent=state.sort==='tokens'?'Tokens ↓':'Recent ↓';render();});
-function selectRow(event){const row=event.target.closest('tr[data-id]');if(row){state.selected=row.dataset.id;render();}}
+function selectRow(event){const row=event.target.closest('tr[data-id]');if(row){state.selected=row.dataset.id;state.pinned=true;render();}}
 $('sessions').addEventListener('click',selectRow);
 $('sessions').addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();selectRow(event);}});
 $('pauseButton').addEventListener('click',()=>{state.paused=!state.paused;$('pauseButton').textContent=state.paused?'Resume':'Pause';$('connectionText').textContent=state.paused?'Paused · snapshot held':'Live · local logs';if(!state.paused)refresh();});
