@@ -11,6 +11,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 from archive import Archive, DEFAULT_DATA
 from codex_usage import merge_threads
+import claude_context
 
 HERE = Path(__file__).resolve().parent
 FIELDS = ('input', 'cached', 'write', 'output', 'reasoning')
@@ -69,6 +70,7 @@ class Log:
         self.conversation_id = None
         self.latest_usage = None
         self.latest_usage_at = None
+        self.marked_1m = False
         self.counter_snapshots = []
         self.compaction_marks = set()
 
@@ -172,11 +174,14 @@ class Log:
                         return
                     self.model = message.get('model') or self.model
                     self.models.add(self.model)
+                    # Claude Code marks 1M-context model selections with a [1m] suffix.
+                    self.marked_1m = self.marked_1m or str(data.get('requestedModel') or '').endswith('[1m]')
                     previous = self.messages.get(key, {})
                     # Several content blocks can carry the same response usage.
                     current = {k: max(current[k], previous.get(k, 0)) for k in FIELDS}
                     self.messages[key] = dict(at=previous.get('at') or stamp, model=self.model, **current)
                     self.context = current['input'] + current['cached'] + current['write'] + current['output']
+                    self.latest_usage, self.latest_usage_at = current, stamp
             elif kind == 'cost-state':
                 if not data.get('hasUnknownModelCost') and isinstance(data.get('totalCostUSD'), (int, float)):
                     self.cost = data['totalCostUSD']
@@ -201,7 +206,8 @@ class Log:
                     project=self.project, model=self.model, models=sorted(self.models),
                     last=self.last, modified=self.modified, subagent=self.subagent, parent=self.parent,
                     totals=dict(**sums, total=total(sums)), events=events,
-                    context=self.context, capacity=self.capacity, compactions=self.compactions,
+                    context=self.context, capacity=self.capacity, capacity_source='logged' if self.capacity else None,
+                    compactions=self.compactions,
                     rate_limits=self.rate_limits, reported_cost=self.cost,
                     source=str(self.path), parse_errors=self.errors,
                     usage_source='cumulative token_count' if self.codex_events and not self.records else
@@ -212,13 +218,17 @@ class Log:
                           _counters=self.counter_snapshots, _compactions=sorted(self.compaction_marks))
         else:
             # Subagent usage belongs to the chat that delegated it.
-            result.update(conversation_id=self.parent if self.subagent and self.parent else self.session_id)
+            result.update(conversation_id=self.parent if self.subagent and self.parent else self.session_id,
+                          latest_usage=self.latest_usage, latest_usage_at=self.latest_usage_at)
         return result
 
 
 class Store:
-    def __init__(self, codex, claude, data_dir=None):
+    def __init__(self, codex, claude, data_dir=None, windows=None, config_warning=None):
         self.codex, self.claude = codex, claude
+        self.windows = claude_context.DEFAULT_WINDOWS if windows is None else windows
+        self.config_warning = config_warning
+        self.last_sessions = claude_context.LastSessions(claude)
         self.logs = {}
         self.lock = threading.Lock()
         self.snapshot = None
@@ -263,6 +273,12 @@ class Store:
             # Read every log before export so subagents can show their parent chat's title.
             titles.update((log.session_id, log.title) for log in logs if log.provider == 'claude' and log.title and not log.subagent)
             sessions = [log.export(titles) for log in logs]
+            last_sessions = self.last_sessions.read()
+            for log, session in zip(logs, sessions):
+                if log.provider == 'claude':
+                    claude_context.apply(session, log.marked_1m, last_sessions, self.windows)
+            if self.config_warning:
+                warnings.append(self.config_warning)
             signature = tuple((s['id'], s['modified'], s['title']) for s in sessions)
             sessions = merge_threads(sessions)
             self.snapshot = dict(at=time.time(), sessions=sessions, sources=sources, warnings=warnings, accounting_version=2)
@@ -331,7 +347,8 @@ def main():
     parser.add_argument('--data-dir', type=Path, default=DEFAULT_DATA / 'history')
     args = parser.parse_args()
     server = ThreadingHTTPServer(('127.0.0.1', args.port), Handler)
-    server.store = Store(args.codex_home, args.claude_home, args.data_dir)
+    windows, config_warning = claude_context.load_windows(args.data_dir.parent / 'config.json')
+    server.store = Store(args.codex_home, args.claude_home, args.data_dir, windows, config_warning)
     stop = threading.Event()
 
     def collect():

@@ -3,11 +3,21 @@ import datetime as dt
 import json
 import os
 from pathlib import Path
+import sys
 import tempfile
 import time
-from zoneinfo import ZoneInfo
 
-DEFAULT_DATA = Path.home() / 'Library/Application Support/Token Observatory'
+
+def default_data():
+    """Per-user data folder following each platform's convention."""
+    if sys.platform == 'darwin':
+        return Path.home() / 'Library/Application Support/Token Observatory'
+    if sys.platform == 'win32':
+        return Path(os.environ.get('APPDATA') or Path.home() / 'AppData/Roaming') / 'Token Observatory'
+    return Path(os.environ.get('XDG_DATA_HOME') or Path.home() / '.local/share') / 'token-observatory'
+
+
+DEFAULT_DATA = default_data()
 
 
 class Archive:
@@ -32,7 +42,7 @@ class Archive:
         return sorted(result, reverse=True)
 
     def update(self, snapshot, signature, force=False):
-        day = dt.datetime.fromtimestamp(snapshot['at'], ZoneInfo('America/Chicago')).date().isoformat()
+        day = dt.datetime.fromtimestamp(snapshot['at']).date().isoformat()
         changed = signature != self.signature or day != self.day
         due = time.monotonic() - self.saved_clock >= self.interval
         if force or (changed and (due or day != self.day)):

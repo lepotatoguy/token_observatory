@@ -15,6 +15,17 @@ def capture(day, value):
 
 
 class ArchiveTests(unittest.TestCase):
+    def test_default_data_follows_platform_conventions(self):
+        from archive import default_data
+        with patch('sys.platform', 'linux'), patch.dict('os.environ', {'XDG_DATA_HOME': '/xdg'}):
+            self.assertEqual(default_data(), Path('/xdg/token-observatory'))
+        with patch('sys.platform', 'linux'), patch.dict('os.environ', {}, clear=True):
+            self.assertEqual(default_data(), Path.home()/'.local/share/token-observatory')
+        with patch('sys.platform', 'darwin'):
+            self.assertEqual(default_data(), Path.home()/'Library/Application Support/Token Observatory')
+        with patch('sys.platform', 'win32'), patch.dict('os.environ', {'APPDATA': '/appdata'}):
+            self.assertEqual(default_data(), Path('/appdata/Token Observatory'))
+
     def test_daily_retention_and_reopening(self):
         with tempfile.TemporaryDirectory() as folder:
             archive=Archive(folder)

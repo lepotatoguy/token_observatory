@@ -72,6 +72,16 @@ Example:
 python3 server.py --port 8766 --claude-home /path/to/.claude --codex-home /path/to/.codex
 ```
 
+### Claude context window
+
+Claude Code transcripts don't record the context window size. To show a percentage, Token Observatory uses a recorded `[1m]` model ID when there is one, otherwise a window you configure per model. `claude-opus-5-5` defaults to 1,000,000. To add or change models, create `config.json` in the data folder (next to `history/`):
+
+```json
+{"claude_context_windows": {"claude-sonnet-5-5": 1000000, "claude-haiku-5-5": 200000}}
+```
+
+Restart the collector afterwards. The dashboard labels these values "configured capacity" so they aren't mistaken for logged ones.
+
 The server listens on `127.0.0.1` only and rejects requests whose `Host` header isn't the loopback address.
 
 ## Update

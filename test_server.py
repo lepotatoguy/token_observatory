@@ -101,6 +101,42 @@ class AccountingTests(unittest.TestCase):
             self.assertEqual(agent['conversation_id'],'parent-id')
             self.assertEqual(sessions['parent-id']['conversation_id'],'parent-id')
 
+    def test_claude_context_card_uses_recorded_and_configured_values(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)
+            project=root/'claude'/'projects'/'project'
+            project.mkdir(parents=True)
+            def reply(model, requested=None, cache=100):
+                return json.dumps(dict(type='assistant', timestamp='2026-10-17T12:00:00Z', requestedModel=requested or model,
+                    message=dict(id=model+str(cache), model=model, usage=dict(input_tokens=2, cache_read_input_tokens=cache,
+                        cache_creation_input_tokens=5, output_tokens=7))))+'\n'
+            (project/'configured.jsonl').write_text(reply('claude-opus-5-5')+reply('claude-opus-5-5', cache=300))
+            (project/'marked.jsonl').write_text(reply('claude-sonnet-5-5', 'claude-sonnet-5-5[1m]'))
+            (project/'ended.jsonl').write_text(reply('claude-haiku-5-5'))
+            (project/'plain.jsonl').write_text(reply('claude-haiku-5-5'))
+            (root/'claude'/'.claude.json').write_text(json.dumps(dict(projects={'/p': dict(
+                lastSessionId='ended', lastCost=1.25, lastModelUsage={'claude-haiku-5-5[1m]': {}})})))
+            sessions={s['session_id']:s for s in Store(root/'codex',root/'claude').read()['sessions']}
+            configured=sessions['configured']
+            self.assertEqual(configured['latest_usage']['cached'],300)
+            self.assertEqual((configured['capacity'],configured['capacity_source']),(1000000,'configured'))
+            self.assertEqual((sessions['marked']['capacity'],sessions['marked']['capacity_source']),(1000000,'model ID [1m]'))
+            self.assertEqual(sessions['ended']['reported_cost'],1.25)
+            self.assertEqual(sessions['ended']['capacity_source'],'model ID [1m]')
+            self.assertIsNone(sessions['plain']['capacity'])
+            self.assertIsNone(sessions['plain']['reported_cost'])
+
+    def test_claude_window_config_overrides_and_rejects_invalid_values(self):
+        from claude_context import load_windows
+        with tempfile.TemporaryDirectory() as folder:
+            config=Path(folder)/'config.json'
+            config.write_text(json.dumps(dict(claude_context_windows={'claude-haiku-5-5':200000,'bad':-1})))
+            windows, warning = load_windows(config)
+            self.assertEqual(windows['claude-haiku-5-5'],200000)
+            self.assertNotIn('bad',windows)
+            self.assertIn('bad',warning)
+            self.assertEqual(load_windows(Path(folder)/'missing.json'),({'claude-opus-5-5':1000000},None))
+
     def test_http_limits_and_live_append(self):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder)
