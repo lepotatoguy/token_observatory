@@ -4,7 +4,7 @@ A local dashboard for Claude Code and Codex session telemetry. Python 3.9 or lat
 
 ## Start
 
-On macOS, open **Token Observatory** from your user Applications folder (`~/Applications`). Build a local app copy in `dist/Token Observatory.app` with `python3 build_app.py`. It starts the local collector and opens your default browser, without a Terminal window. Reopening the app reuses the running collector.
+On macOS, open **Token Observatory** from your user Applications folder (`~/Applications`). Run `python3 build_app.py` to install the app and create `dist/Token Observatory.zip`. Build copies stay zipped so macOS sees one launcher. It starts the local collector and opens your default browser, without a Terminal window. Reopening the app reuses the running collector.
 
 The collector continues after the browser closes. Reopen the app after a restart to resume collection. No login item is installed. The app uses the Python 3 runtime already installed on this Mac.
 
@@ -64,7 +64,7 @@ The server binds only to `127.0.0.1`, rejects unrelated Host headers and cross-s
 ## Check
 
 ```sh
-python3 -m unittest -v test_server.py test_archive.py
+python3 -m unittest -v test_server.py test_archive.py test_build_app.py
 node --check app.js
 ```
 
@@ -72,4 +72,4 @@ Official telemetry references: [Codex App Server](https://learn.chatgpt.com/docs
 
 ## Repository files
 
-Source and tests live at the repository root. Generated app bundles and ZIP files live in `dist/`. Local telemetry snapshots and screenshots live in `private/`. Git ignores both folders, generated graphs, runtime caches, and usage logs. Automatic history remains in the Application Support folder described above.
+Source and tests live at the repository root. Generated ZIP files live in `dist/`; the single unpacked app lives in `~/Applications/Token Observatory.app`. Local telemetry snapshots and screenshots live in `private/`. Git ignores both folders, generated graphs, runtime caches, and usage logs. Automatic history remains in the Application Support folder described above.

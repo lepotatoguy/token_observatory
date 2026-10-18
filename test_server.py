@@ -94,6 +94,9 @@ class AccountingTests(unittest.TestCase):
             base=f'http://127.0.0.1:{server.server_port}'
             try:
                 self.assertEqual(urllib.request.urlopen(base).status,200)
+                with urllib.request.urlopen(base+'/logo.svg') as response:
+                    self.assertEqual(response.headers.get_content_type(),'image/svg+xml')
+                    self.assertIn(b'<svg',response.read())
                 first=json.load(urllib.request.urlopen(base+'/api/usage'))
                 self.assertEqual(first['sessions'][0]['totals']['total'],0)
                 path.write_text(json.dumps(dict(type='assistant',message=dict(id='new',usage=dict(input_tokens=7,output_tokens=2))))+'\n')

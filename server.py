@@ -258,10 +258,11 @@ class Handler(BaseHTTPRequestHandler):
         elif route == '/api/usage':
             body = json.dumps(self.server.store.read(), separators=(',', ':'), allow_nan=False).encode()
             content_type = 'application/json'
-        elif route in ('/', '/index.html', '/app.js', '/style.css'):
+        elif route in ('/', '/index.html', '/app.js', '/style.css', '/logo.svg'):
             path = HERE / ('index.html' if route == '/' else route[1:])
             body = path.read_bytes()
-            content_type = 'text/html; charset=utf-8' if path.suffix == '.html' else 'text/css' if path.suffix == '.css' else 'text/javascript'
+            content_type = {'.html': 'text/html; charset=utf-8', '.css': 'text/css',
+                            '.js': 'text/javascript', '.svg': 'image/svg+xml'}[path.suffix]
         else:
             self.send_error(404)
             return
