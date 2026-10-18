@@ -1,0 +1,52 @@
+#!/bin/sh
+# Start the Token Observatory collector if it is not running, then open the dashboard.
+# Usage: token-observatory [--no-open]
+set -eu
+umask 077
+
+here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+data="${XDG_DATA_HOME:-$HOME/.local/share}/token-observatory"
+port="${TOKEN_OBSERVATORY_PORT:-8765}"
+url="http://127.0.0.1:$port"
+# Run from a checkout when the sources sit next to this script; otherwise use the installed copy.
+if [ -f "$here/../server.py" ]; then app="$here/.."; else app="$data/app"; fi
+
+if [ ! -f "$app/server.py" ]; then
+  echo "token-observatory: server.py not found in $app. Run install.sh again." >&2
+  exit 1
+fi
+command -v python3 >/dev/null 2>&1 || { echo "token-observatory: python3 not found." >&2; exit 1; }
+
+healthy() {
+  python3 - "$url/api/health" <<'PY' 2>/dev/null
+import sys, urllib.request
+try:
+    body = urllib.request.urlopen(sys.argv[1], timeout=1).read()
+except OSError:
+    sys.exit(1)
+sys.exit(0 if b'"app":"token-observatory"' in body else 1)
+PY
+}
+
+mkdir -p "$data"
+if ! healthy; then
+  nohup python3 "$app/server.py" --port "$port" --data-dir "$data/history" \
+    >>"$data/service.log" 2>&1 </dev/null &
+fi
+attempt=0
+until healthy; do
+  attempt=$((attempt + 1))
+  if [ "$attempt" -ge 50 ]; then
+    echo "token-observatory: collector did not start. See $data/service.log" >&2
+    exit 1
+  fi
+  sleep 0.1
+done
+
+echo "Token Observatory: $url"
+[ "${1:-}" = "--no-open" ] && exit 0
+if command -v xdg-open >/dev/null 2>&1; then
+  xdg-open "$url" >/dev/null 2>&1 &
+elif command -v open >/dev/null 2>&1; then
+  open "$url"
+fi
