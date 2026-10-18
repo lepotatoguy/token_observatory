@@ -1,6 +1,6 @@
 'use strict';
 const $ = id => document.getElementById(id);
-const state = {data:null, provider:'all', selected:null, paused:false, sort:'tokens', pinned:false, fetching:false, history:'', archive:null};
+const state = {data:null, provider:'all', selected:null, paused:false, sort:'recent', sortDirection:'desc', fetching:false, history:'', archive:null};
 const nowSeconds = () => state.history && state.data ? state.data.at : Date.now()/1000;
 const fields = ['input','cached','write','output'];
 const colors = ['#8caa77','#aaa0c5','#88a6b5','#d9916b'];
@@ -75,16 +75,17 @@ function render() {
   renderChart(events);
   const query=$('search').value.toLowerCase();
   const visible=sessions.filter(s => `${s.title} ${s.model} ${s.project} ${s.session_id}`.toLowerCase().includes(query));
-  visible.sort((a,b) => state.sort==='tokens' ? b.scope.total-a.scope.total : (b.last || 0)-(a.last || 0));
-  $('sessionCount').textContent=exact(visible.length);
-  // Until a row is chosen, follow the newest activity, since each delegated subagent writes a new log.
-  if (!state.pinned || !visible.some(s => s.id===state.selected)) {
-    state.pinned=false;
-    state.selected=visible.reduce((latest,s)=>(s.last || 0)>(latest?.last || 0)?s:latest,null)?.id || visible[0]?.id || null;
+  visible.sort((a,b) => (state.sortDirection==='desc'?1:-1)*(state.sort==='tokens' ? b.scope.total-a.scope.total : (b.last || 0)-(a.last || 0)));
+  for(const [key,button,header,label] of [['tokens','sortButton','tokensHeader','Tokens'],['recent','activitySortButton','activityHeader','Last activity']]) {
+    const active=state.sort===key;
+    $(button).textContent=label+(active?(state.sortDirection==='desc'?' ↓':' ↑'):'');
+    $(header).setAttribute('aria-sort',active?(state.sortDirection==='desc'?'descending':'ascending'):'none');
   }
+  $('sessionCount').textContent=exact(visible.length);
+  if (!visible.some(s => s.id===state.selected)) state.selected=null;
   $('sessions').innerHTML=visible.length ? visible.map(s => `<tr tabindex="0" data-id="${escapeHTML(s.id)}" class="${s.id===state.selected?'active':''}" aria-selected="${s.id===state.selected}"><td><div class="conversation"><span class="provider-icon ${s.provider}">${s.provider==='claude'?'✳':'◈'}</span><div><div class="conversation-title" title="${escapeHTML(s.title)}">${escapeHTML(s.title)}</div><div class="conversation-sub">${escapeHTML(s.model)}${s.agent_count?` · ${s.agent_count} ${s.agent_count===1?'subagent':'subagents'}`:s.subagent?' · subagent':''}${s.last && Date.now()/1000-s.last<300?' · recent':''}</div></div></div></td><td class="token-number" title="${exact(s.scope.total)}">${s.usage_source==='unavailable'?'Unreported':compact(s.scope.total)}</td><td class="relative" title="${escapeHTML(date(s.last))}">${relative(s.last)}</td></tr>`).join('') : '<tr><td colspan="3"><div class="empty-state">No chats match these filters.</div></td></tr>';
   $('tableFooter').textContent=`${exact(visible.length)} ${visible.length===1?'chat':'chats'} · ${exact(visible.reduce((n,s)=>n+s.events.length,0))} usage updates · select a row for details`;
-  renderInspector(visible.find(s => s.id===state.selected));
+  renderInspector(visible.find(s => s.id===state.selected),visible);
   $('updated').textContent=`${state.history?'Snapshot captured':'Last scan'} ${date(state.data.at)}`;
   if (state.archive) {
     const selected=state.history;
@@ -129,18 +130,28 @@ function renderContextDetails(s) {
   const usage=s.latest_usage;
   return `<div class="context-categories">${[...fields,'reasoning'].map((k,i)=>`<span>${k==='reasoning'?'Reasoning (in output)':labels[i]}<b>${exact(usage[k])}</b></span>`).join('')}<span>Free space<b>${s.capacity && s.context!==null?exact(Math.max(0,s.capacity-s.context)):'Unreported'}</b></span></div><p class="context-note">Latest request: ${escapeHTML(date(s.latest_usage_at))}. ${providerName(s.provider)} logs omit system, tool, memory, and skill token attribution.</p>`;
 }
-function renderInspector(s) {
-  if(!s){$('inspector').innerHTML='<div class="empty-state">Select a conversation to see details.</div>';return;}
+function renderUsageBreakdown(usage, unavailable) {
+  const bar=fields.map((k,i)=>`<span style="width:${usage.total?usage[k]/usage.total*100:0}%;background:${colors[i]}"></span>`).join('');
+  const rows=fields.map((k,i)=>`<div class="breakdown-row"><span><i class="swatch" style="background:${colors[i]}"></i>${labels[i]}</span><strong>${unavailable?'Unreported':exact(usage[k])}</strong></div>`).join('');
+  return `<div class="breakdown-heading">Token breakdown <span>${unavailable?'Unreported':exact(usage.total)} recorded</span></div><div class="usage-bar">${bar}</div>${rows}<div class="breakdown-row"><span>↳ Reasoning, included in output</span><strong>${unavailable?'Unreported':exact(usage.reasoning)}</strong></div>`;
+}
+function renderCombinedInspector(sessions) {
+  const events=sessions.flatMap(s=>s.events), usage=sum(events);
+  const missing=sessions.filter(s=>s.usage_source==='unavailable').length;
+  $('inspector').dataset.id='all-conversations';
+  $('inspector').innerHTML=`<div class="inspector-label">COMBINED USAGE</div><h2>All conversations</h2><div class="meta">${exact(sessions.length)} ${sessions.length===1?'chat':'chats'} matching current filters and search</div><div class="context-card"><div class="context-heading">Context windows are per conversation</div><p>Select a chat to inspect its context usage and capacity.</p></div><div class="chat-activity"><div class="breakdown-heading">Combined token activity</div><p>Selected time range · input and cache in green · output in orange</p><div id="conversationChart" class="conversation-chart"></div></div>${renderUsageBreakdown(usage,!!sessions.length && missing===sessions.length)}<div class="detail-facts"><div><span>Usage updates in range</span><strong>${exact(events.length)}</strong></div><div><span>Chats with unreported usage</span><strong>${exact(missing)}</strong></div></div>`;
+  renderChart(events,'conversationChart');
+}
+function renderInspector(s, sessions=[]) {
+  if(!s){renderCombinedInspector(sessions);return;}
   const expanded=$('inspector').querySelector('details')?.open && $('inspector').dataset.id===s.id;
   $('inspector').dataset.id=s.id;
   const usage=s.scope, capacity=s.capacity, context=s.context;
   const pct=capacity && context!==null ? context/capacity*100:null;
-  const bar=fields.map((k,i)=>`<span style="width:${usage.total?usage[k]/usage.total*100:0}%;background:${colors[i]}"></span>`).join('');
-  const rows=fields.map((k,i)=>`<div class="breakdown-row"><span><i class="swatch" style="background:${colors[i]}"></i>${labels[i]}</span><strong>${s.usage_source==='unavailable'?'Unreported':exact(usage[k])}</strong></div>`).join('');
   const rate=s.rate_limits;
   const quota=rate ? ['primary','secondary'].filter(k=>rate[k]).map(k=>{const r=rate[k];return `<div><span>${r.window_minutes===300?'5-hour':r.window_minutes===10080?'Weekly':`${r.window_minutes}-minute`} account quota</span><strong>${r.used_percent ?? 'Unreported'}% used · resets ${escapeHTML(date(r.resets_at))}</strong></div>`;}).join('') : '';
   const stream=s.events.slice().sort((a,b)=>(b.at || 0)-(a.at || 0)).slice(0,20);
-  $('inspector').innerHTML=`<div class="inspector-label">CONVERSATION INSPECTOR</div><h2>${escapeHTML(s.title)}</h2><div class="meta"><span class="provider-badge ${s.provider}">${providerName(s.provider)}</span> &nbsp; ${escapeHTML(s.model)}</div><div class="context-card"><div class="context-heading"><span>◒ &nbsp; Context window</span><strong>${pct===null?'Capacity unreported':`${pct.toFixed(1)}%`}</strong></div><p>${context===null?'Latest request usage unavailable':`${exact(context)} tokens, latest recorded input + output`}</p><div class="context-track"><span class="context-used" style="width:${pct===null?0:Math.min(100,pct)}%"></span></div><div class="context-footer"><span title="${escapeHTML(capacityNote(s))}">${capacity?`${compact(capacity)} ${capacityLabel(s)}`:'Window size unreported'}</span><span>${capacity && context!==null ? `${compact(Math.max(0,capacity-context))} free`:'Free space unknown'}</span></div>${renderContextDetails(s)}</div><div class="chat-activity"><div class="breakdown-heading">Chat token activity</div><p>Selected time range · input and cache in green · output in orange${s.agent_count?` · includes ${exact(s.agent_count)} ${s.agent_count===1?'subagent':'subagents'}`:s.subagent?' · subagent only':''}</p><div id="conversationChart" class="conversation-chart"></div></div><div class="breakdown-heading">Token breakdown <span>${s.usage_source==='unavailable'?'Unreported':exact(usage.total)} recorded</span></div><div class="usage-bar">${bar}</div>${rows}<div class="breakdown-row"><span>↳ Reasoning, included in output</span><strong>${s.usage_source==='unavailable'?'Unreported':exact(usage.reasoning)}</strong></div><div class="detail-facts"><div><span>Recorded compactions, lifetime</span><strong>${exact(s.compactions)}</strong></div><div><span>Usage source</span><strong>${escapeHTML(s.usage_source)}</strong></div><div><span>Usage updates in range</span><strong>${exact(s.events.length)}</strong></div><div><span>Lifetime recorded tokens</span><strong>${s.usage_source==='unavailable'?'Unreported':exact(s.totals.total)}</strong></div><div><span>${s.cost_source==='session end'?'Reported cost at session end':'Reported lifetime cost'}</span><strong>${s.reported_cost===null?'Unreported':`$${Number(s.reported_cost).toFixed(2)}`}</strong></div>${quota}<div><span>Session ID</span><strong>${escapeHTML(s.session_id)}</strong></div></div><details><summary>Recent usage updates</summary><div class="event-list">${stream.length?stream.map(e=>`<div><span title="${escapeHTML(date(e.at))}">${relative(e.at)}</span><span>${exact(eventTotal(e))} tokens</span></div>`).join(''):'No recorded usage.'}</div><div class="source-path">${escapeHTML(s.source)}</div></details>`;
+  $('inspector').innerHTML=`<div class="inspector-label">CONVERSATION INSPECTOR</div><button type="button" class="quiet" data-clear-selection>← All conversations</button><h2>${escapeHTML(s.title)}</h2><div class="meta"><span class="provider-badge ${s.provider}">${providerName(s.provider)}</span> &nbsp; ${escapeHTML(s.model)}</div><div class="context-card"><div class="context-heading"><span>◒ &nbsp; Context window</span><strong>${pct===null?'Capacity unreported':`${pct.toFixed(1)}%`}</strong></div><p>${context===null?'Latest request usage unavailable':`${exact(context)} tokens, latest recorded input + output`}</p><div class="context-track"><span class="context-used" style="width:${pct===null?0:Math.min(100,pct)}%"></span></div><div class="context-footer"><span title="${escapeHTML(capacityNote(s))}">${capacity?`${compact(capacity)} ${capacityLabel(s)}`:'Window size unreported'}</span><span>${capacity && context!==null ? `${compact(Math.max(0,capacity-context))} free`:'Free space unknown'}</span></div>${renderContextDetails(s)}</div><div class="chat-activity"><div class="breakdown-heading">Chat token activity</div><p>Selected time range · input and cache in green · output in orange${s.agent_count?` · includes ${exact(s.agent_count)} ${s.agent_count===1?'subagent':'subagents'}`:s.subagent?' · subagent only':''}</p><div id="conversationChart" class="conversation-chart"></div></div>${renderUsageBreakdown(usage,s.usage_source==='unavailable')}<div class="detail-facts"><div><span>Recorded compactions, lifetime</span><strong>${exact(s.compactions)}</strong></div><div><span>Usage source</span><strong>${escapeHTML(s.usage_source)}</strong></div><div><span>Usage updates in range</span><strong>${exact(s.events.length)}</strong></div><div><span>Lifetime recorded tokens</span><strong>${s.usage_source==='unavailable'?'Unreported':exact(s.totals.total)}</strong></div><div><span>${s.cost_source==='session end'?'Reported cost at session end':'Reported lifetime cost'}</span><strong>${s.reported_cost===null?'Unreported':`$${Number(s.reported_cost).toFixed(2)}`}</strong></div>${quota}<div><span>Session ID</span><strong>${escapeHTML(s.session_id)}</strong></div></div><details><summary>Recent usage updates</summary><div class="event-list">${stream.length?stream.map(e=>`<div><span title="${escapeHTML(date(e.at))}">${relative(e.at)}</span><span>${exact(eventTotal(e))} tokens</span></div>`).join(''):'No recorded usage.'}</div><div class="source-path">${escapeHTML(s.source)}</div></details>`;
   renderChart(s.events,'conversationChart');
   if(expanded)$('inspector').querySelector('details').open=true;
 }
@@ -164,8 +175,15 @@ async function refresh() {
 document.querySelectorAll('[data-provider]').forEach(button=>button.addEventListener('click',()=>{state.provider=button.dataset.provider;document.querySelectorAll('[data-provider]').forEach(b=>b.classList.toggle('selected',b===button));render();}));
 ['range','agents'].forEach(id=>$(id).addEventListener('change',render));
 $('search').addEventListener('input',render);
-$('sortButton').addEventListener('click',()=>{state.sort=state.sort==='tokens'?'recent':'tokens';$('sortButton').textContent=state.sort==='tokens'?'Tokens ↓':'Recent ↓';render();});
-function selectRow(event){const row=event.target.closest('tr[data-id]');if(row){state.selected=row.dataset.id;state.pinned=true;render();}}
+function sortBy(key) {
+  state.sortDirection=state.sort===key && state.sortDirection==='desc'?'asc':'desc';
+  state.sort=key;
+  render();
+}
+$('sortButton').addEventListener('click',()=>sortBy('tokens'));
+$('activitySortButton').addEventListener('click',()=>sortBy('recent'));
+function selectRow(event){const row=event.target.closest('tr[data-id]');if(row){state.selected=state.selected===row.dataset.id?null:row.dataset.id;render();}}
+$('inspector').addEventListener('click',event=>{if(event.target.closest('[data-clear-selection]')){state.selected=null;render();}});
 $('sessions').addEventListener('click',selectRow);
 $('sessions').addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();selectRow(event);}});
 $('pauseButton').addEventListener('click',()=>{state.paused=!state.paused;$('pauseButton').textContent=state.paused?'Resume':'Pause';$('connectionText').textContent=state.paused?'Paused · snapshot held':'Live · local logs';if(!state.paused)refresh();});
