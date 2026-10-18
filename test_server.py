@@ -98,6 +98,8 @@ class AccountingTests(unittest.TestCase):
             self.assertEqual(agent['title'],'My chat')
             self.assertEqual(agent['totals']['total'],5)
             self.assertIsNone(sessions['parent-id']['parent'])
+            self.assertEqual(agent['conversation_id'],'parent-id')
+            self.assertEqual(sessions['parent-id']['conversation_id'],'parent-id')
 
     def test_http_limits_and_live_append(self):
         with tempfile.TemporaryDirectory() as folder:

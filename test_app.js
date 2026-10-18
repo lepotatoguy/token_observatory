@@ -19,11 +19,15 @@ run(`function fixture(id, options={}) {
     latest_usage:event,latest_usage_at:event.at,usage_source:'response usage',subagent:false,reported_cost:null,...options};
 }
 const root=fixture('root'), child=fixture('child',{subagent:true}),
-  other=fixture('other',{conversation_id:'other'}), claude=fixture('claude',{provider:'claude'});
-state.data={at:1792252800,sessions:[root,child,other,claude]};`);
+  other=fixture('other',{conversation_id:'other'}), claude=fixture('claude',{provider:'claude',conversation_id:'claude'}),
+  claudeChild=fixture('claude-child',{provider:'claude',conversation_id:'claude',subagent:true});
+state.data={at:1792252800,sessions:[root,child,other,claude,claudeChild]};`);
 assert.equal(run('scoped().length'),3);
 assert.equal(run("scoped().find(s=>s.id==='codex-conversation:root').scope.total"),220);
 assert.equal(run("scoped().find(s=>s.id==='codex-conversation:root').agent_count"),1);
+// Claude subagent usage counts toward its parent chat, like Codex threads.
+assert.equal(run("scoped().find(s=>s.id==='claude-conversation:claude').scope.total"),220);
+assert.equal(run("scoped().find(s=>s.id==='claude-conversation:claude').agent_count"),1);
 node('agents').checked=false;
 assert.equal(run("scoped().find(s=>s.id==='codex-conversation:root').scope.total"),110);
 node('range').value='48h';

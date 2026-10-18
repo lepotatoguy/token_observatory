@@ -20,18 +20,20 @@ function cutoff() {
   if (range === 'today') { now.setHours(0,0,0,0); return now.getTime()/1000; }
   return nowSeconds()-(range==='48h' ? 48*3600 : Number(range)*86400);
 }
-function groupCodexSessions(sessions) {
-  const result=sessions.filter(s=>s.provider!=='codex'), groups=new Map();
-  for(const s of sessions.filter(s=>s.provider==='codex')) {
-    const key=s.conversation_id || s.session_id;
+// One row per chat: subagent and thread logs join the conversation that spawned them.
+function groupConversations(sessions) {
+  const result=[], groups=new Map();
+  for(const s of sessions) {
+    const key=`${s.provider}:${s.conversation_id || s.session_id}`;
     if(!groups.has(key))groups.set(key,[]);
     groups.get(key).push(s);
   }
-  for(const [key,members] of groups) {
+  for(const members of groups.values()) {
+    const key=members[0].conversation_id || members[0].session_id;
     const root=members.find(s=>s.session_id===key && !s.subagent) || members.find(s=>!s.subagent) || members[0];
     const events=members.flatMap(s=>s.events).sort((a,b)=>(a.at || 0)-(b.at || 0));
     const totals=Object.fromEntries([...fields,'reasoning','total'].map(k=>[k,members.reduce((n,s)=>n+(s.totals[k] || 0),0)]));
-    result.push({...root,id:'codex-conversation:'+key,session_id:key,events,totals,
+    result.push({...root,id:`${root.provider}-conversation:${key}`,session_id:key,events,totals,
       last:Math.max(...members.map(s=>s.last || 0)) || null,
       modified:Math.max(...members.map(s=>s.modified || 0)),
       models:[...new Set(members.flatMap(s=>s.models))],
@@ -45,7 +47,7 @@ function groupCodexSessions(sessions) {
 function scoped() {
   if (!state.data) return [];
   const since = cutoff();
-  return groupCodexSessions(state.data.sessions.filter(s => (state.provider === 'all' || s.provider === state.provider) && ($('agents').checked || !s.subagent)))
+  return groupConversations(state.data.sessions.filter(s => (state.provider === 'all' || s.provider === state.provider) && ($('agents').checked || !s.subagent)))
     .map(s => {const events=s.events.filter(e => !since || (e.at !== null && e.at >= since)); return {...s,events,scope:sum(events)};})
     .filter(s => !since || s.events.length || (s.last && s.last >= since));
 }

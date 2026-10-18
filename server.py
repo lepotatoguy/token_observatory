@@ -210,6 +210,9 @@ class Log:
             result.update(conversation_id=self.conversation_id or self.session_id,
                           latest_usage=self.latest_usage, latest_usage_at=self.latest_usage_at,
                           _counters=self.counter_snapshots, _compactions=sorted(self.compaction_marks))
+        else:
+            # Subagent usage belongs to the chat that delegated it.
+            result.update(conversation_id=self.parent if self.subagent and self.parent else self.session_id)
         return result
 
 
