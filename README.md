@@ -42,6 +42,18 @@ Token Observatory keeps collecting in the background after you close the browser
 |---|---|---|
 | `"/Applications/Token Observatory.app/Contents/MacOS/TokenObservatory" --stop` | `TokenObservatory-<version>-windows-x64.exe --stop` | `token-observatory --stop` |
 
+## Screenshots
+
+Screenshots use synthetic demo data.
+
+**Overview:** combined usage, provider and time filters, and token activity.
+
+![Dashboard overview with demo token totals, time filters, activity chart, and conversation list](docs/screenshots/overview.jpg)
+
+**Conversation details:** context usage, a timeline, and the input, cache, output, and reasoning breakdown.
+
+![Selected conversation showing context capacity, token activity, and detailed usage breakdown](docs/screenshots/conversation-details.jpg)
+
 ## Good to know
 
 - Only chats saved on this computer appear. Chats on claude.ai or chatgpt.com don't.
