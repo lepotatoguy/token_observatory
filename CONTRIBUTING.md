@@ -19,6 +19,9 @@ Thanks for helping. Token Observatory stays small on purpose: one Python process
 | `index.html`, `app.js`, `style.css`, `logo.svg` | Dashboard UI |
 | `build_app.py`, `launch-app.sh` | macOS app bundle and its launcher |
 | `scripts/token-observatory` | Portable launcher (Linux install, or run from a checkout) |
+| `launcher.py` | Start-once launcher with `--stop`; entry point of the standalone builds |
+| `packaging/` | PyInstaller spec, icons, `.deb` builder and release notes |
+| `.github/workflows/release.yml` | Builds macOS, Linux and Windows releases |
 | `install.sh`, `uninstall.sh` | Per-user install and removal |
 | `test_*.py`, `test_app.js` | Tests |
 
@@ -40,6 +43,14 @@ node test_app.js
 `node test_app.js` needs Node.js 18 or later. It's used only for tests; the app itself never needs Node.
 
 When you change parsing, add a test with a small synthetic log line next to the existing ones in `test_server.py` or `test_codex_usage.py`. Never commit real session logs: they contain prompts and file paths. `.gitignore` already excludes `*.jsonl` and `*.json`.
+
+## Releases
+
+1. Bump `VERSION` in `launcher.py`.
+2. Optionally run **Release** manually from the Actions tab to build and smoke-test all three platforms.
+3. Tag and push: `git tag v1.2.3 && git push origin v1.2.3`. The workflow checks that the tag matches `VERSION`, builds on macOS, Ubuntu and Windows runners, and publishes the release with checksums.
+
+To build locally: `pip install pyinstaller==6.11.1`, then `pyinstaller --noconfirm packaging/token_observatory.spec`. The `.deb` step (`python3 packaging/build_deb.py dist/token-observatory <version> out.deb`) needs `dpkg-deb`.
 
 ## Pull requests
 

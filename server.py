@@ -5,6 +5,7 @@ import datetime as dt
 import json
 import os
 from pathlib import Path
+import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -13,7 +14,8 @@ from archive import Archive, DEFAULT_DATA
 from codex_usage import merge_threads
 import claude_context
 
-HERE = Path(__file__).resolve().parent
+# Standalone builds unpack the dashboard assets into PyInstaller's bundle folder.
+HERE = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent))
 FIELDS = ('input', 'cached', 'write', 'output', 'reasoning')
 
 

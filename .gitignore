@@ -10,3 +10,4 @@ usage-snapshot-*.json
 token-usage-*.json
 .env
 .env.*
+build/

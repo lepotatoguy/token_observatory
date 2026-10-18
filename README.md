@@ -1,6 +1,8 @@
 # Token Observatory
 
-A local dashboard for Claude Code and Codex session telemetry. Python 3.9 or later, no packages or API keys. Runs on macOS and Linux; Windows can run it from source.
+A local dashboard for Claude Code and Codex session telemetry. Python 3.9 or later, no packages or API keys. Runs on macOS, Linux and Windows.
+
+Download a standalone build (Python bundled) from [Releases](https://github.com/lepotatoguy/token_observatory/releases/latest): a macOS app, a Linux `.deb`, or a Windows `.exe`. Or install from source:
 
 ```sh
 git clone https://github.com/lepotatoguy/token_observatory.git
@@ -14,11 +16,33 @@ cd token_observatory
 
 ## Start
 
-On macOS, open **Token Observatory** from your user Applications folder (`~/Applications`). Run `python3 build_app.py` to install the app and create `dist/Token Observatory.zip`. Build copies stay zipped so macOS sees one launcher. It starts the local collector and opens your default browser, without a Terminal window. Reopening the app reuses the running collector.
+**macOS.** Build and install the app (also writes `dist/Token Observatory.zip`):
 
-The collector continues after the browser closes. Reopen the app after a restart to resume collection. No login item is installed. The app uses the Python 3 runtime already installed on this Mac.
+```sh
+python3 build_app.py
+```
 
-Or run from this folder:
+Open it:
+
+```sh
+open "$HOME/Applications/Token Observatory.app"
+```
+
+Stop the background collector:
+
+```sh
+pkill -f "Token Observatory.app/Contents/Resources/dashboard/server.py"
+```
+
+The app starts the collector and opens your default browser; opening it again reuses the running collector. The collector keeps running after the browser closes. After a restart, open the app again. No login item is installed.
+
+**Linux.** After `./install.sh`:
+
+```sh
+token-observatory
+```
+
+**Any platform.** Run from this folder:
 
 ```sh
 python3 server.py

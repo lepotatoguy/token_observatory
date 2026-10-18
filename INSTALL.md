@@ -16,7 +16,21 @@ python3 --version
 
 On macOS, the Xcode Command Line Tools include Python 3.9. Install them with `xcode-select --install` if `python3` is missing.
 
-## Install
+## Download a release
+
+Standalone builds bundle Python, so nothing else needs to be installed. Get them from [Releases](https://github.com/lepotatoguy/token_observatory/releases/latest).
+
+| Platform | File | Install |
+|---|---|---|
+| macOS (Apple silicon) | `TokenObservatory-<version>-macos-arm64.zip` | Unzip, move **Token Observatory.app** to Applications, then right-click it and choose **Open** (it isn't notarized) |
+| Linux (Debian, Ubuntu; x86-64) | `TokenObservatory-<version>-linux-amd64.deb` | `sudo apt install ./TokenObservatory-<version>-linux-amd64.deb`, then run `token-observatory` or use the menu entry |
+| Windows (x86-64) | `TokenObservatory-<version>-windows-x64.exe` | Run it. If SmartScreen warns, choose **More info**, then **Run anyway** |
+
+Every build takes the same options: `--no-open`, `--stop`, `--port N` and `--version`. On macOS the executable is `Token Observatory.app/Contents/MacOS/TokenObservatory`.
+
+On Intel Macs, or to build from source, use the steps below.
+
+## Install from source
 
 ```sh
 git clone https://github.com/lepotatoguy/token_observatory.git
