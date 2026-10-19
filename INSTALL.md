@@ -86,6 +86,21 @@ Example:
 python3 server.py --port 8766 --claude-home /path/to/.claude --codex-home /path/to/.codex
 ```
 
+### Live Claude usage limits
+
+Claude Code shares your plan's 5-hour and weekly usage with its status line after each reply (Pro and Max plans; see the [status line docs](https://code.claude.com/docs/en/statusline)). To have Token Observatory record them, add its status line to Claude Code's settings once:
+
+| Install | Command |
+|---|---|
+| macOS release app | `"/Applications/Token Observatory.app/Contents/MacOS/TokenObservatory" --install-statusline` |
+| Linux `.deb` | `token-observatory --install-statusline` |
+| Windows | `TokenObservatory-<version>-windows-x64.exe --install-statusline` |
+| From source | `python3 launcher.py --install-statusline` |
+
+This sets `statusLine` in `~/.claude/settings.json` (or `$CLAUDE_CONFIG_DIR/settings.json`) after saving a copy as `settings.json.bak`. It won't replace a status line you already have. Your terminal's status line then shows the model, context and both limits. Remove it with `--uninstall-statusline`.
+
+Without it, Claude limits fall back to the Claude desktop app's occasional usage samples, which can be hours old.
+
 ### Claude context window
 
 Claude Code transcripts don't record the context window size. To show a percentage, Token Observatory uses a recorded `[1m]` model ID when there is one, otherwise a window you configure per model. `claude-opus-5-5` defaults to 1,000,000. To add or change models, create `config.json` in the data folder (next to `history/`):
@@ -108,6 +123,8 @@ git pull
 Then quit the running collector so the new version starts on next launch. On macOS run `pkill -f "Token Observatory.app/Contents/Resources/dashboard/server.py"`; on Linux run `pkill -f token-observatory/app/server.py`. Saved history is kept.
 
 ## Uninstall
+
+If you added the Claude Code status line, remove it first with `--uninstall-statusline` (see [Live Claude usage limits](#live-claude-usage-limits)); otherwise Claude Code keeps calling a program that's gone.
 
 ```sh
 ./uninstall.sh           # stop the collector and remove the app; keep saved history

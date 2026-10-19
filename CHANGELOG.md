@@ -2,6 +2,19 @@
 
 All notable changes to Token Observatory. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [1.1.0] - 2026-10-19
+
+### Added
+
+- Click a day's bar in Token activity to view that day across the whole dashboard; a date chip clears it.
+- Usage limits card for Claude Code and Codex: 5-hour and weekly quota, shown as used and left, with reset countdowns.
+- Optional Claude Code status line (`--install-statusline`, removed with `--uninstall-statusline`) that records Claude's live 5-hour and weekly limits and shows them in your terminal. Without it, Claude limits come from the Claude desktop app's occasional usage samples.
+- Daily token budget meter with a suggested daily amount, estimated from each weekly quota, this week's usage, and the days until reset.
+- Breakdown by model or project, with share and cache reuse; click a name to filter.
+- Trends: today vs your 7-day average, week over week, busiest recent day, and a weekday-by-hour heatmap.
+- Context pressure banner, conversation badges, and optional desktop alerts for full context windows and the daily budget.
+- Cache details in the inspector, including Claude's 5-minute vs 1-hour cache writes.
+
 ## [1.0.1] - 2026-10-18
 
 ### Changed

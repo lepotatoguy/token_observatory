@@ -10,6 +10,7 @@ const node = id => {
 const context = vm.createContext({document:{getElementById:node,querySelectorAll:()=>[]},
   fetch:()=>new Promise(()=>{}),setInterval(){},console});
 vm.runInContext(fs.readFileSync(__dirname+'/app.js','utf8'),context);
+vm.runInContext(fs.readFileSync(__dirname+'/insights.js','utf8'),context);
 const run = source => vm.runInContext(source,context);
 assert.equal(run('state.sort'),'recent');
 assert.equal(run('state.sortDirection'),'desc');
@@ -121,4 +122,50 @@ assert.equal(node('activityHeader').attributes['aria-sort'],'ascending');
 assert.equal(node('activitySortButton').textContent,'Last activity ↑');
 run('render()');
 assert.deepEqual(rowOrder(),latest.slice().reverse());
+// Insights: day drill-down, breakdowns, cache, trends, quota and budget.
+run(`const local=(d,h)=>new Date(2026,9,d,h).getTime()/1000;
+  state.history='2026-10-17'; state.selected=null;
+  state.data={at:local(17,12),warnings:[],sources:[],limits:{},sessions:[
+    fixture('d1',{conversation_id:'d1',project:'alpha',last:local(16,10),events:[{at:local(16,10),model:'m1',input:100,cached:300,write:0,output:10,reasoning:0}]}),
+    fixture('d2',{conversation_id:'d2',project:'beta',last:local(17,9),events:[{at:local(17,9),model:'m2',input:50,cached:0,write:50,write_1h:20,output:5,reasoning:0}]})]};`);
+node('range').value='7';
+run('renderChart(scoped().flatMap(s=>s.events))');
+assert.match(node('chart').innerHTML,/data-day="2026-10-16"/);
+assert.match(node('chart').innerHTML,/data-day="2026-10-17"/);
+run('showDay("2026-10-16")');
+assert.equal(run('JSON.stringify(scoped().map(s=>s.session_id))'),'["d1"]');
+assert.equal(node('dayFilter').hidden,false);
+run('clearDay()');
+assert.equal(run('scoped().length'),2);
+assert.equal(node('dayFilter').hidden,true);
+assert.equal(run("JSON.stringify(breakdownRows(scoped(),'model').map(r=>[r.name,r.total]))"),'[["m1",410],["m2",105]]');
+assert.equal(run("breakdownRows(scoped(),'project')[1].name"),'beta');
+const cache=run("renderCacheSummary(scoped().find(s=>s.session_id==='d2').events)");
+assert.match(cache,/30 \/ 20/);
+assert.match(cache,/0\.0%/);
+assert.equal(run('contextPercent({capacity:1000,context:850})'),85);
+assert.equal(run('contextPercent({capacity:null,context:850})'),null);
+const trend=run('trendSummary(state.data.sessions)');
+assert.equal(trend.today,105);
+assert.equal(trend.average,410/7);
+assert.equal(trend.busiest.day,'2026-10-16');
+assert.match(run('limitRow({used_percent:21,window_minutes:300,resets_at:state.data.at+2*3600+5*60})'),/5-hour[\s\S]*resets in 2h 5m/);
+assert.match(run('limitRow({used_percent:50,window_minutes:10080,resets_at:state.data.at-60})'),/Weekly[\s\S]*reset since this snapshot/);
+assert.equal(run('todayTokens()'),105);
+run(`state.history=''; state.data.sessions.push(fixture('hot',{conversation_id:'hot',title:'Busy chat',last:Date.now()/1000-60,capacity:1000,context:900}));`);
+run('renderPressure()');
+assert.equal(node('pressure').hidden,false);
+assert.match(node('pressure').innerHTML,/Busy chat \(90%\)/);
+// Both providers' limits, and a suggested daily budget from each weekly quota.
+run(`state.history='2026-10-17'; state.data.sessions=state.data.sessions.filter(s=>s.session_id!=='hot');
+  state.data.limits={codex:{observed_at:state.data.at,primary:{used_percent:3,window_minutes:300,resets_at:state.data.at+3600},secondary:{used_percent:20,window_minutes:10080,resets_at:state.data.at+2*86400}},
+    claude:{observed_at:state.data.at-600,primary:{used_percent:100,window_minutes:300,resets_at:null},secondary:{used_percent:50,window_minutes:10080,resets_at:state.data.at+3*86400,resets_estimated:true}}};`);
+run('renderLimits()');
+assert.match(node('limits').innerHTML,/Claude[\s\S]*100% used · 0% left[\s\S]*reset time unknown[\s\S]*resets in ~3d 0h \(estimated\)[\s\S]*Codex[\s\S]*3% used · 97% left/);
+const suggestion=run('JSON.stringify(suggestedBudget())');
+assert.equal(JSON.parse(suggestion).total,1030);
+assert.match(suggestion,/"provider":"codex","daily":1030/);
+assert.match(suggestion,/"missing":\["claude"\]/);
+run('renderBudget()');
+assert.match(node('budget').innerHTML,/Suggested[\s\S]*1\.0k/);
 console.log('Frontend grouping, combined usage, selection, sorting, filters, context details, and charts passed.');

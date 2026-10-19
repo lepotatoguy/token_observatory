@@ -14,11 +14,13 @@ import urllib.request
 import webbrowser
 
 from archive import DEFAULT_DATA
+import claude_statusline
 
-VERSION = '1.0.1'  # Release tags must match; the PyInstaller spec reads it from here.
+VERSION = '1.1.0'  # Release tags must match; the PyInstaller spec reads it from here.
 STARTUP_SECONDS = 60  # First launches can wait on OS malware scans; one-file builds also unpack first.
 PID_FILE = DEFAULT_DATA / 'collector.pid'
 LOG_FILE = DEFAULT_DATA / 'service.log'
+CLAUDE_LIMITS_FILE = DEFAULT_DATA / 'claude-rate-limits.json'
 
 
 def say(message, error=False):
@@ -93,12 +95,22 @@ def main():
     parser.add_argument('--port', type=int, default=int(os.environ.get('TOKEN_OBSERVATORY_PORT', 8765)))
     parser.add_argument('--no-open', action='store_true', help='start the collector without opening a browser')
     parser.add_argument('--stop', action='store_true', help='stop the background collector')
+    parser.add_argument('--statusline', action='store_true', help='status line mode for Claude Code: save its rate limits')
+    parser.add_argument('--install-statusline', action='store_true', help="add the status line to Claude Code's settings")
+    parser.add_argument('--uninstall-statusline', action='store_true', help="remove it from Claude Code's settings")
     parser.add_argument('--serve', action='store_true', help=argparse.SUPPRESS)
     parser.add_argument('--version', action='version', version=f'Token Observatory {VERSION}')
     args = parser.parse_args()
     url = f'http://127.0.0.1:{args.port}'
     if args.serve:
         return serve(args.port)
+    if args.statusline:
+        say(claude_statusline.capture(sys.stdin, CLAUDE_LIMITS_FILE))
+        return 0
+    if args.install_statusline or args.uninstall_statusline:
+        ok, message = claude_statusline.update_settings(install=args.install_statusline)
+        say(message, error=not ok)
+        return 0 if ok else 1
     if args.stop:
         return stop_collector(url)
     if not healthy(url):

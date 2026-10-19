@@ -2,12 +2,13 @@ import json
 from pathlib import Path
 import tempfile
 import threading
+import time
 import unittest
 import urllib.error
 import urllib.request
 from http.server import ThreadingHTTPServer
 
-from server import Handler, Log, Store, tokens, total
+from server import Handler, Log, Store, timestamp, tokens, total
 
 
 class AccountingTests(unittest.TestCase):
@@ -136,6 +137,62 @@ class AccountingTests(unittest.TestCase):
             self.assertNotIn('bad',windows)
             self.assertIn('bad',warning)
             self.assertEqual(load_windows(Path(folder)/'missing.json'),({'claude-opus-5-5':1000000},None))
+
+    def test_latest_codex_quota_and_claude_hour_cache_writes(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)
+            sessions=root/'codex'/'sessions'
+            sessions.mkdir(parents=True)
+            def quota(stamp, used):
+                return json.dumps(dict(type='event_msg', timestamp=stamp, payload=dict(type='token_count',
+                    rate_limits=dict(primary=dict(used_percent=used, window_minutes=300, resets_at=1792365343)))))+'\n'
+            (sessions/'old.jsonl').write_text(quota('2026-10-17T10:00:00Z', 5))
+            (sessions/'new.jsonl').write_text(quota('2026-10-17T12:00:00Z', 21))
+            project=root/'claude'/'projects'/'p'
+            project.mkdir(parents=True)
+            (project/'chat.jsonl').write_text(json.dumps(dict(type='assistant', timestamp='2026-10-17T12:00:00Z',
+                message=dict(id='r', model='m', usage=dict(input_tokens=1, cache_creation_input_tokens=30, output_tokens=2,
+                    cache_creation=dict(ephemeral_5m_input_tokens=10, ephemeral_1h_input_tokens=20)))))+'\n')
+            snapshot=Store(root/'codex',root/'claude').read()
+            limits=snapshot['limits']['codex']
+            self.assertEqual(limits['primary']['used_percent'],21)
+            self.assertEqual(limits['observed_at'],timestamp('2026-10-17T12:00:00Z'))
+            chat=next(s for s in snapshot['sessions'] if s['provider']=='claude')
+            self.assertEqual((chat['events'][0]['write'],chat['events'][0]['write_1h']),(30,20))
+
+    def test_claude_limits_combine_desktop_usage_and_logged_resets(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)
+            project=root/'claude'/'projects'/'p'
+            project.mkdir(parents=True)
+            now=time.time()
+            week_reset=now-2*86400  # Logged at an earlier rejection; the window repeats weekly.
+            lines=[dict(type='assistant', timestamp='2026-10-17T08:00:00Z', quotaLimits=dict(rateLimitType='seven_day', resetsAt=week_reset)),
+                   dict(type='assistant', timestamp='2026-10-18T08:00:00Z', quotaLimits=dict(rateLimitType='five_hour', resetsAt=now+3600))]
+            (project/'chat.jsonl').write_text(''.join(json.dumps(line)+'\n' for line in lines))
+            plan=root/'plan-usage-history.json'
+            plan.write_text(json.dumps(dict(version=2, samples=[dict(t=(now-7200)*1000, org='x', u=dict(fh=100, sd=14)),
+                                                                dict(t=(now-60)*1000, org='x', u=dict(fh=3, sd=28))])))
+            claude=Store(root/'codex',root/'claude',plan_usage=plan).read()['limits']['claude']
+            self.assertEqual((claude['primary']['used_percent'],claude['secondary']['used_percent']),(3,28))
+            self.assertAlmostEqual(claude['primary']['resets_at'],now+3600)
+            self.assertIsNone(claude['secondary']['resets_at'])  # A passed weekly reset is not guessed forward.
+            self.assertNotIn('org',json.dumps(claude))
+
+    def test_claude_statusline_capture_beats_older_desktop_sample(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)
+            now=time.time()
+            capture=root/'claude-rate-limits.json'
+            capture.write_text(json.dumps(dict(captured_at=now-30, five_hour=dict(used_percentage=79, resets_at=now+3600),
+                                               seven_day=dict(used_percentage=55, resets_at=now+5*86400))))
+            plan=root/'plan-usage-history.json'
+            plan.write_text(json.dumps(dict(samples=[dict(t=(now-3600)*1000, u=dict(fh=0, sd=28))])))
+            claude=Store(root/'codex',root/'claude',plan_usage=plan,claude_limits_file=capture).read()['limits']['claude']
+            self.assertEqual((claude['primary']['used_percent'],claude['secondary']['used_percent']),(79,55))
+            self.assertAlmostEqual(claude['secondary']['resets_at'],now+5*86400)
+            self.assertFalse(claude['secondary']['resets_estimated'])
+            self.assertEqual(claude['source'],'statusline')
 
     def test_http_limits_and_live_append(self):
         with tempfile.TemporaryDirectory() as folder:

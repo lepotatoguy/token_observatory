@@ -1,3 +1,4 @@
+import json
 import os
 from pathlib import Path
 import socket
@@ -48,6 +49,38 @@ class LauncherTests(unittest.TestCase):
                 self.assertFalse(healthy(url))
             finally:
                 launch('--stop')
+
+    def test_statusline_saves_claude_rate_limits(self):
+        with tempfile.TemporaryDirectory() as folder:
+            env = dict(os.environ, HOME=folder, XDG_DATA_HOME=str(Path(folder)/'data'), APPDATA=folder)
+            payload = json.dumps(dict(model=dict(display_name='Opus'), context_window=dict(used_percentage=12.4),
+                rate_limits=dict(five_hour=dict(used_percentage=79, resets_at=4102444800), seven_day=dict(used_percentage=55.2, resets_at=4102444800))))
+            shown = subprocess.run([sys.executable, str(ROOT/'launcher.py'), '--statusline'], input=payload, env=env,
+                                   capture_output=True, text=True, timeout=30)
+            self.assertEqual(shown.returncode, 0, shown.stderr)
+            self.assertIn('5h 79%', shown.stdout)
+            saved = json.loads(next(Path(folder).rglob('claude-rate-limits.json')).read_text())
+            self.assertEqual((saved['five_hour']['used_percentage'], saved['seven_day']['used_percentage']), (79, 55.2))
+            # A later status line without rate limits keeps the saved windows.
+            subprocess.run([sys.executable, str(ROOT/'launcher.py'), '--statusline'], input='{}', env=env, capture_output=True, text=True, timeout=30)
+            self.assertEqual(json.loads(next(Path(folder).rglob('claude-rate-limits.json')).read_text())['five_hour']['used_percentage'], 79)
+
+    def test_install_statusline_adds_command_and_respects_existing(self):
+        with tempfile.TemporaryDirectory() as folder:
+            claude = Path(folder)/'claude'
+            claude.mkdir()
+            (claude/'settings.json').write_text(json.dumps(dict(theme='dark')))
+            env = dict(os.environ, HOME=folder, CLAUDE_CONFIG_DIR=str(claude))
+            run = lambda *a: subprocess.run([sys.executable, str(ROOT/'launcher.py'), *a], env=env, capture_output=True, text=True, timeout=30)
+            self.assertEqual(run('--install-statusline').returncode, 0)
+            settings = json.loads((claude/'settings.json').read_text())
+            self.assertEqual(settings['theme'], 'dark')
+            self.assertIn('--statusline', settings['statusLine']['command'])
+            self.assertEqual(run('--uninstall-statusline').returncode, 0)
+            self.assertNotIn('statusLine', json.loads((claude/'settings.json').read_text()))
+            (claude/'settings.json').write_text(json.dumps(dict(statusLine=dict(type='command', command='my-line'))))
+            self.assertNotEqual(run('--install-statusline').returncode, 0)
+            self.assertEqual(json.loads((claude/'settings.json').read_text())['statusLine']['command'], 'my-line')
 
     def test_healthy_is_false_when_nothing_listens(self):
         self.assertFalse(healthy(f'http://127.0.0.1:{free_port()}'))

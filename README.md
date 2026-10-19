@@ -33,6 +33,11 @@ The dashboard opens in your browser at <http://127.0.0.1:8765>. The first launch
 - Filter by provider (Claude Code or Codex) and time range, or search by name or model.
 - **Export CSV** and **Export JSON** save what you're looking at.
 - A saved copy is kept for each day. Pick a date next to the time range to look back.
+- Click any day's bar in **Token activity** to see just that day. Click the date chip to go back.
+- **Usage limits** shows how much of your Claude and Codex 5-hour and weekly quota you've used and when each resets. For live Claude numbers, add the Token Observatory status line to Claude Code once (see [INSTALL.md](INSTALL.md#live-claude-usage-limits)); otherwise they come from the Claude desktop app's last check.
+- **Today's budget** compares today's tokens with a suggested daily amount that keeps you within your weekly limits. You can also set your own target.
+- **Breakdown** splits usage by model or project; **Trends** compares today with your recent average and shows when you use tokens most.
+- Turn on **Alerts** (top right) for a desktop notification when a chat's context is almost full or you pass your budget.
 
 Numbers update after each reply finishes, not while it's being written.
 

@@ -13,6 +13,7 @@ from urllib.parse import urlsplit
 from archive import Archive, DEFAULT_DATA
 from codex_usage import merge_threads
 import claude_context
+import claude_limits
 
 # Standalone builds unpack the dashboard assets into PyInstaller's bundle folder.
 HERE = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent))
@@ -57,6 +58,8 @@ class Log:
         self.last = None
         self.capacity = None
         self.rate_limits = None
+        self.rate_limits_at = None
+        self.quota_resets = {}
         self.messages = {}
         self.codex_events = []
         self.records = {}
@@ -125,7 +128,8 @@ class Log:
                 owner = payload.get('thread_id')
                 if (owner and owner != self.session_id) or (self.subagent and owner != self.session_id):
                     return
-                self.rate_limits = payload.get('rate_limits') or self.rate_limits
+                if payload.get('rate_limits'):
+                    self.rate_limits, self.rate_limits_at = payload['rate_limits'], stamp
                 info = payload.get('info') or {}
                 usage = info.get('total_token_usage')
                 if usage is not None:
@@ -156,6 +160,11 @@ class Log:
                         self.latest_usage, self.latest_usage_at = usage, stamp
                         self.context = total(usage)
         else:
+            quota = data.get('quotaLimits')
+            if isinstance(quota, dict) and quota.get('rateLimitType') and isinstance(quota.get('resetsAt'), (int, float)):
+                # Claude Code logs reset times only when a request is rejected at a limit.
+                limit = quota['rateLimitType']
+                self.quota_resets[limit] = max(self.quota_resets.get(limit, 0), quota['resetsAt'])
             if self.subagent and data.get('sessionId'):
                 # Subagent transcripts record the parent chat's session ID.
                 self.parent = data['sessionId']
@@ -174,13 +183,15 @@ class Log:
                     current = tokens(usage, True)
                     if not total(current):
                         return
+                    # The 1-hour share of cache writes, when Claude Code records the split.
+                    current['write_1h'] = number((usage.get('cache_creation') or {}).get('ephemeral_1h_input_tokens'))
                     self.model = message.get('model') or self.model
                     self.models.add(self.model)
                     # Claude Code marks 1M-context model selections with a [1m] suffix.
                     self.marked_1m = self.marked_1m or str(data.get('requestedModel') or '').endswith('[1m]')
                     previous = self.messages.get(key, {})
                     # Several content blocks can carry the same response usage.
-                    current = {k: max(current[k], previous.get(k, 0)) for k in FIELDS}
+                    current = {k: max(current[k], previous.get(k, 0)) for k in (*FIELDS, 'write_1h')}
                     self.messages[key] = dict(at=previous.get('at') or stamp, model=self.model, **current)
                     self.context = current['input'] + current['cached'] + current['write'] + current['output']
                     self.latest_usage, self.latest_usage_at = current, stamp
@@ -210,7 +221,7 @@ class Log:
                     totals=dict(**sums, total=total(sums)), events=events,
                     context=self.context, capacity=self.capacity, capacity_source='logged' if self.capacity else None,
                     compactions=self.compactions,
-                    rate_limits=self.rate_limits, reported_cost=self.cost,
+                    rate_limits=self.rate_limits, rate_limits_at=self.rate_limits_at, reported_cost=self.cost,
                     source=str(self.path), parse_errors=self.errors,
                     usage_source='cumulative token_count' if self.codex_events and not self.records else
                     ('response usage' if events and (self.records or self.messages) else 'cost-state' if events else 'unavailable'))
@@ -225,12 +236,21 @@ class Log:
         return result
 
 
+def latest_limits(sessions):
+    """Newest account quota snapshot per provider; only Codex records one locally."""
+    quotas = [s for s in sessions if s.get('rate_limits') and s.get('rate_limits_at')]
+    newest = max(quotas, key=lambda s: s['rate_limits_at'], default=None)
+    return {'codex': dict(newest['rate_limits'], observed_at=newest['rate_limits_at'])} if newest else {}
+
+
 class Store:
-    def __init__(self, codex, claude, data_dir=None, windows=None, config_warning=None):
+    def __init__(self, codex, claude, data_dir=None, windows=None, config_warning=None, plan_usage=None, claude_limits_file=None):
         self.codex, self.claude = codex, claude
         self.windows = claude_context.DEFAULT_WINDOWS if windows is None else windows
         self.config_warning = config_warning
         self.last_sessions = claude_context.LastSessions(claude)
+        self.plan_usage = claude_limits.PlanUsage(plan_usage)
+        self.claude_limits_file = claude_limits_file
         self.logs = {}
         self.lock = threading.Lock()
         self.snapshot = None
@@ -283,13 +303,23 @@ class Store:
                 warnings.append(self.config_warning)
             signature = tuple((s['id'], s['modified'], s['title']) for s in sessions)
             sessions = merge_threads(sessions)
-            self.snapshot = dict(at=time.time(), sessions=sessions, sources=sources, warnings=warnings, accounting_version=2)
+            self.snapshot = dict(at=time.time(), sessions=sessions, sources=sources, warnings=warnings,
+                                 limits=self.limits(logs, sessions), accounting_version=2)
             if self.archive:
                 self.snapshot['archive'] = self.archive.update(self.snapshot, signature, force=force_save)
                 if self.snapshot['archive']['error']:
                     warnings.append(self.snapshot['archive']['error'])
             self.scanned = time.monotonic()
             return self.snapshot
+
+    def limits(self, logs, sessions):
+        result = latest_limits(sessions)
+        resets = {}
+        for log in logs:
+            for limit, at in log.quota_resets.items():
+                resets[limit] = max(resets.get(limit, 0), at)
+        claude = claude_limits.limits(self.plan_usage.read(), resets, time.time(), claude_limits.read_capture(self.claude_limits_file))
+        return dict(result, claude=claude) if claude else result
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -317,7 +347,7 @@ class Handler(BaseHTTPRequestHandler):
         elif route == '/api/usage':
             body = json.dumps(self.server.store.read(), separators=(',', ':'), allow_nan=False).encode()
             content_type = 'application/json'
-        elif route in ('/', '/index.html', '/app.js', '/style.css', '/logo.svg'):
+        elif route in ('/', '/index.html', '/app.js', '/insights.js', '/style.css', '/logo.svg'):
             path = HERE / ('index.html' if route == '/' else route[1:])
             body = path.read_bytes()
             content_type = {'.html': 'text/html; charset=utf-8', '.css': 'text/css',
@@ -350,7 +380,9 @@ def main():
     args = parser.parse_args()
     server = ThreadingHTTPServer(('127.0.0.1', args.port), Handler)
     windows, config_warning = claude_context.load_windows(args.data_dir.parent / 'config.json')
-    server.store = Store(args.codex_home, args.claude_home, args.data_dir, windows, config_warning)
+    server.store = Store(args.codex_home, args.claude_home, args.data_dir, windows, config_warning,
+                         claude_limits.desktop_folder() / 'plan-usage-history.json',
+                         args.data_dir.parent / 'claude-rate-limits.json')
     stop = threading.Event()
 
     def collect():

@@ -31,6 +31,14 @@ python3 server.py --port 8766 --codex-home /path/to/.codex --claude-home /path/t
 - Automatic daily JSON archives and a saved-history selector.
 - Latest recorded context occupancy, compaction counts, and Codex account quota snapshots with reset times.
 - Source status, malformed-record warnings, and explicit missing-data labels.
+- Day drill-down: ranges of two days or more draw one bar per calendar day; clicking a bar limits every panel to that day (hourly bars). The JSON export records `day` and `until`.
+- Usage limits: the newest Codex `rate_limits` snapshot across sessions (`limits.codex` in `/api/usage`, with `observed_at`). For Claude (`limits.claude`, see `claude_limits.py`), best source first: the status line capture `claude-rate-limits.json` in the data folder, written by `launcher.py --statusline` from the `rate_limits.five_hour` / `rate_limits.seven_day` fields Claude Code passes to its [status line](https://code.claude.com/docs/en/statusline) (Pro and Max plans, after the first reply; `source: statusline`); otherwise the Claude desktop app's `plan-usage-history.json` (newest sample's `u.fh` and `u.sd`, undocumented; the organization ID is never read out) with reset times from `quotaLimits` that Claude Code logs when a request is rejected at a limit, kept only while still in the future (`source: desktop`). The capture wins when it is at least as new as the desktop sample. `--install-statusline` sets `statusLine` in Claude Code's `settings.json` (backup in `settings.json.bak`) and refuses to replace someone else's status line.
+- Suggested daily budget: for each provider with a weekly percentage of at least 1 and a reset time, tokens used from the window start (reset minus 7 days) to the snapshot, divided by that percentage, times the percentage left, spread over the days to reset (at least one). Claude's quota is shared with claude.ai and desktop chats that aren't in these logs, so the Claude share tends to be low.
+- Daily budget and alert settings live in the browser's localStorage (`to.*` keys), per browser. The budget counts every recorded token today across providers, subagents and cache reads included.
+- Breakdown by model (from each usage event) or project (from the session's working folder), with each group's share of input served from cache.
+- Trends use every retained log for the selected provider, independent of the time range: today vs the average of the previous 7 days, the last 7 days vs the 7 before, the busiest of the last 30 days, and a 28-day weekday-by-hour heatmap.
+- Context pressure: chats active in the last hour whose latest request uses 80% or more of a known window are listed in a banner and flagged in the conversation list. With Alerts on, the browser notifies once per chat at 80% and 95%, and once per day at 80% and 100% of the budget.
+- Cache: the inspector shows the share of input served from cache and, for Claude, cache writes split into 5-minute and 1-hour (`write_1h` on each Claude event, from `usage.cache_creation`).
 
 ## Data folder and JSON history
 
@@ -95,9 +103,10 @@ To release:
 |---|---|
 | `server.py` | Log discovery, parsing, HTTP API (`/api/usage`, `/api/history/<day>`, `/api/health`) |
 | `codex_usage.py`, `claude_context.py` | Codex accounting; Claude capacity and cost |
+| `claude_limits.py`, `claude_statusline.py` | Claude usage limits; status line capture and settings install |
 | `archive.py` | Daily JSON snapshots and per-platform data folder |
-| `launcher.py` | Start-once launcher; entry point of the standalone builds |
-| `index.html`, `app.js`, `style.css`, `logo.svg` | Dashboard UI |
+| `launcher.py` | Start-once launcher, status line mode; entry point of the standalone builds |
+| `index.html`, `app.js`, `insights.js`, `style.css`, `logo.svg` | Dashboard UI (`insights.js`: limits, budget, breakdown, trends, alerts) |
 | `packaging/` | PyInstaller spec, icons, `.deb` builder, release notes |
 | `.github/workflows/release.yml` | Release builds |
 | `install.sh`, `uninstall.sh`, `scripts/` | Source install for macOS and Linux |
@@ -106,4 +115,4 @@ To release:
 
 `dist/`, `build/`, and `private/` are ignored by git.
 
-Telemetry references: [Codex App Server](https://learn.chatgpt.com/docs/app-server), [Claude Code monitoring](https://code.claude.com/docs/en/monitoring-usage).
+Telemetry references: [Codex App Server](https://learn.chatgpt.com/docs/app-server), [Claude Code monitoring](https://code.claude.com/docs/en/monitoring-usage), [Claude Code status line](https://code.claude.com/docs/en/statusline).
