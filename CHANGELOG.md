@@ -2,6 +2,19 @@
 
 All notable changes to Token Observatory. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [1.2.0] - 2026-10-19
+
+### Added
+
+- **Refresh** button. It rescans the logs and asks Claude Code (`claude -p /usage`, no model request) and Codex (`codex app-server`) for current 5-hour and weekly usage. The dashboard also checks when it opens, and the collector every 5 minutes. A failed check says why and keeps the last good numbers.
+- Today's budget meter is split into a Claude Code part and a Codex part, each sized by that tool's suggested daily share, with a line per tool showing tokens used, its share and the percentage.
+- Optional conversation hooks for Claude Code and Codex (`--install-hooks`, removed with `--uninstall-hooks`). Near the 5-hour limit (90% by default) the running chat is asked to stop new work and write a handoff summary to `.claude/handoffs/` or `.codex/handoffs/`; at 60% context it is asked to condense and continue. Both thresholds are set in `config.json`.
+
+### Changed
+
+- Claude Code models documented as running with a 1M context window by default (Opus 4.7 and later, Sonnet 5 and later, Haiku 5.5) now show a context percentage without extra configuration.
+- The Claude status line is now optional; live checks cover the desktop app's Code tab, which doesn't run status lines.
+
 ## [1.1.0] - 2026-10-19
 
 ### Added

@@ -36,8 +36,8 @@ function renderInsights(sessions) {
   renderAlertsButton();
 }
 
-// Usage limits. Codex writes a quota snapshot with each reply. For Claude, the desktop app keeps
-// usage percentages and Claude Code logs reset times when a request hits a limit (server.py combines them).
+// Usage limits. The collector asks Claude Code (/usage) and the Codex app server on Refresh and every few
+// minutes; between checks, Codex log snapshots, Claude's status line or the desktop app's samples fill in.
 const windowLabel = minutes => minutes === 300 ? '5-hour' : minutes === 10080 ? 'Weekly' : `${minutes}-minute`;
 const WEEK = 7*86400;
 function countdown(seconds) {
@@ -57,21 +57,29 @@ function limitRow(limit) {
   return `<div class="limit"><div class="limit-head"><span>${windowLabel(limit.window_minutes)}</span><strong>${known ? `${+Number(limit.used_percent).toFixed(1)}% used · ${+Math.max(0, 100 - limit.used_percent).toFixed(1)}% left` : 'Unreported'}</strong></div><div class="gauge${level}"><span style="width:${used}%"></span></div><small title="${escapeHTML(limit.resets_at ? date(limit.resets_at) : 'Not recorded locally')}">${resetText(limit)}</small></div>`;
 }
 const LIMIT_NOTES = {
-  claude: q => q.source === 'statusline' ? `From Claude Code's status line, ${relative(q.observed_at).toLowerCase()}.`
-    : `From the Claude desktop app's last sample${q.observed_at ? `, ${relative(q.observed_at).toLowerCase()}` : ''}; it may be out of date. Run <code>token-observatory --install-statusline</code> for live numbers (see INSTALL.md).`,
-  codex: q => `Codex${q.plan_type ? ` ${escapeHTML(q.plan_type)}` : ''} quota, ${relative(q.observed_at).toLowerCase()}.`,
+  claude: q => q.source === 'live' ? `Checked with Claude Code's /usage, ${relative(q.observed_at).toLowerCase()}.`
+    : q.source === 'statusline' ? `From Claude Code's status line, ${relative(q.observed_at).toLowerCase()}.`
+    : `From the Claude desktop app's last sample${q.observed_at ? `, ${relative(q.observed_at).toLowerCase()}` : ''}; it may be out of date. Click Refresh to ask Claude Code for current numbers.`,
+  codex: q => `Codex${q.plan_type ? ` ${escapeHTML(q.plan_type)}` : ''} quota${q.source === 'live' ? ' from the Codex app server' : ' from the newest Codex log'}, ${relative(q.observed_at).toLowerCase()}.`,
 };
+function liveError(provider) {
+  const error = (state.data.live_limits?.errors || {})[provider];
+  return error ? ` <span class="limit-error">Live check failed: ${escapeHTML(error)}.</span>` : '';
+}
 function renderLimits() {
   const limits = state.data.limits || {};
-  const groups = ['claude', 'codex'].filter(p => limits[p]).map(p => `<div class="limit-group"><div class="limit-provider">${providerName(p)}</div>${['primary','secondary'].filter(k => limits[p][k]).map(k => limitRow(limits[p][k])).join('')}<p class="insight-note">${LIMIT_NOTES[p](limits[p])}</p></div>`).join('');
+  const groups = ['claude', 'codex'].filter(p => limits[p]).map(p => `<div class="limit-group"><div class="limit-provider">${providerName(p)}</div>${['primary','secondary'].filter(k => limits[p][k]).map(k => limitRow(limits[p][k])).join('')}<p class="insight-note">${LIMIT_NOTES[p](limits[p])}${liveError(p)}</p></div>`).join('');
   $('limits').innerHTML = `<div class="insight-title">Usage limits</div>${groups || '<p class="insight-note">No quota data yet. Codex records it with each reply; the Claude desktop app records it as you use Claude.</p>'}`;
 }
 
 // Daily budget: all recorded tokens today, every provider, subagents and cache reads included.
-function todayTokens() {
-  const start = dayStart(dayKey(nowSeconds()));
-  return state.data.sessions.reduce((n, s) => n + s.events.reduce((m, e) => m + (e.at !== null && e.at >= start ? eventTotal(e) : 0), 0), 0);
+const PROVIDERS = ['claude', 'codex'];
+function todayByProvider() {
+  const start = dayStart(dayKey(nowSeconds())), used = {claude:0, codex:0};
+  for (const s of state.data.sessions) for (const e of s.events) if (e.at !== null && e.at >= start) used[s.provider] = (used[s.provider] || 0) + eventTotal(e);
+  return used;
 }
+const todayTokens = () => Object.values(todayByProvider()).reduce((a, b) => a + b, 0);
 // Suggested daily budget, per provider: tokens used in the current weekly window per quota percent,
 // times the percent left, spread over the days until the weekly reset. An estimate, labeled as one.
 function providerTokens(provider, from, to) {
@@ -90,11 +98,27 @@ function suggestedBudget() {
   }
   return {total:parts.reduce((n, p) => n + p.daily, 0), parts, missing};
 }
-function budgetMeter(used, budget, suggested) {
-  const scale = budget || suggested.total, share = percent(used, scale);
-  const level = share >= 100 ? ' critical' : share >= BUDGET_ALERTS[0] ? ' high' : '';
+// The meter is split into one zone per provider, sized by its suggested daily share (scaled to a custom
+// budget). Without a suggestion, each provider's tokens stack on one track.
+function budgetShares(budget, suggested) {
+  const scale = budget && suggested.total ? budget/suggested.total : 1;
+  return Object.fromEntries(suggested.parts.map(p => [p.provider, p.daily*scale]));
+}
+const budgetLevel = share => share >= 100 ? ' critical' : share >= BUDGET_ALERTS[0] ? ' high' : '';
+function budgetMeter(usedBy, budget, suggested) {
+  const used = PROVIDERS.reduce((n, p) => n + (usedBy[p] || 0), 0), scale = budget || suggested.total, share = percent(used, scale);
+  const shares = suggested.total ? budgetShares(budget, suggested) : {};
+  const zoned = PROVIDERS.filter(p => shares[p]);
+  const track = zoned.length
+    ? `<div class="split-meter">${zoned.map(p => { const part = percent(usedBy[p] || 0, shares[p]); return `<div class="split-zone ${p}${budgetLevel(part)}" style="flex-grow:${shares[p]}"><span style="width:${Math.min(100, part)}%"></span></div>`; }).join('')}</div>`
+    : `<div class="split-meter stacked">${PROVIDERS.map(p => `<span class="${p}" style="width:${Math.min(100, percent(usedBy[p] || 0, scale))}%"></span>`).join('')}</div>`;
   const marker = budget && suggested.total ? `<span class="marker" style="left:${Math.min(100, percent(suggested.total, budget))}%" title="Suggested ${exact(suggested.total)}"></span>` : '';
-  return `<div class="limit-head"><span title="${exact(used)} of ${exact(scale)}">${compact(used)} of ${compact(scale)} ${budget ? 'budget' : 'suggested'}</span><strong>${share.toFixed(0)}%</strong></div><div class="meter"><div class="gauge${level}"><span style="width:${Math.min(100, share)}%"></span></div>${marker}</div>`;
+  const legend = PROVIDERS.filter(p => shares[p] || usedBy[p]).map(p => {
+    const detail = shares[p] ? `${compact(usedBy[p] || 0)} of ${compact(shares[p])} · ${percent(usedBy[p] || 0, shares[p]).toFixed(0)}%` : `${compact(usedBy[p])} today · no share`;
+    return `<li title="${exact(usedBy[p] || 0)}${shares[p] ? ` of ${exact(Math.round(shares[p]))}` : ''} tokens"><i class="swatch ${p}"></i>${providerName(p)}<strong class="${budgetLevel(shares[p] ? percent(usedBy[p] || 0, shares[p]) : 0).trim()}">${detail}</strong></li>`;
+  }).join('');
+  const label = `Today's tokens by provider: ${PROVIDERS.map(p => `${providerName(p)} ${compact(usedBy[p] || 0)}${shares[p] ? ` of ${compact(shares[p])}` : ''}`).join(', ')}`;
+  return `<div class="limit-head"><span title="${exact(used)} of ${exact(scale)}">${compact(used)} of ${compact(scale)} ${budget ? 'budget' : 'suggested'}</span><strong class="${budgetLevel(share).trim()}">${share.toFixed(0)}%</strong></div><div class="meter" role="img" aria-label="${escapeHTML(label)}">${track}${marker}</div><ul class="budget-split">${legend}</ul>`;
 }
 function suggestionNote(suggested) {
   if (!suggested.total) return '<p class="insight-note">No suggestion yet: it needs a weekly quota with a known reset and some usage in the current week.</p>';
@@ -104,12 +128,13 @@ function suggestionNote(suggested) {
 }
 function renderBudget() {
   if (state.editingBudget && $('budget').querySelector('form')) return; // Don't wipe the field while typing.
-  const budget = saved.get('dailyBudget', null), used = todayTokens(), suggested = suggestedBudget();
+  const budget = saved.get('dailyBudget', null), usedBy = todayByProvider(), suggested = suggestedBudget();
+  const used = PROVIDERS.reduce((n, p) => n + usedBy[p], 0);
   let body;
   if (state.editingBudget) {
     body = `<form class="budget-form"><label class="sr-only" for="budgetInput">Daily token budget</label><input id="budgetInput" type="number" min="1" step="1" inputmode="numeric" value="${budget || suggested.total || ''}" placeholder="Tokens per day" required><button type="submit" class="button">Save</button>${budget ? '<button type="button" class="quiet" data-budget="clear">Remove</button>' : ''}<button type="button" class="quiet" data-budget="cancel">Cancel</button></form>${suggestionNote(suggested)}`;
   } else {
-    const meter = budget || suggested.total ? budgetMeter(used, budget, suggested) : `<p class="insight-note">${compact(used)} tokens so far today.</p>`;
+    const meter = budget || suggested.total ? budgetMeter(usedBy, budget, suggested) : `<p class="insight-note">${compact(used)} tokens so far today.</p>`;
     const actions = `<div class="budget-actions"><button type="button" class="button" data-budget="edit">${budget ? 'Change budget' : 'Set budget'}</button>${suggested.total && suggested.total !== budget ? '<button type="button" class="quiet" data-budget="suggested">Use suggested</button>' : ''}</div>`;
     body = `${meter}${suggestionNote(suggested)}${actions}`;
     if (budget && !state.history) checkBudget(percent(used, budget));

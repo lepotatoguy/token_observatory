@@ -168,4 +168,31 @@ assert.match(suggestion,/"provider":"codex","daily":1030/);
 assert.match(suggestion,/"missing":\["claude"\]/);
 run('renderBudget()');
 assert.match(node('budget').innerHTML,/Suggested[\s\S]*1\.0k/);
+// Budget meter: one zone per provider, sized by its suggested share and scaled to a custom budget.
+assert.equal(run('JSON.stringify(todayByProvider())'),'{"claude":0,"codex":105}');
+assert.match(node('budget').innerHTML,/class="split-zone codex"/);
+assert.match(node('budget').innerHTML,/Codex<strong class="">105 of 1\.0k · 10%/);
+assert.doesNotMatch(node('budget').innerHTML,/split-zone claude/);
+const both={total:4000,parts:[{provider:'claude',daily:1000},{provider:'codex',daily:3000}],missing:[]};
+const zoned=run(`budgetMeter({claude:500,codex:3300},null,${JSON.stringify(both)})`);
+assert.match(zoned,/3\.8k of 4\.0k suggested/);
+assert.match(zoned,/split-zone claude" style="flex-grow:1000"><span style="width:50%/);
+assert.match(zoned,/split-zone codex critical" style="flex-grow:3000"><span style="width:100%/);
+assert.match(zoned,/Claude Code<strong class="">500 of 1\.0k · 50%/);
+assert.match(zoned,/Codex<strong class="critical">3\.3k of 3\.0k · 110%/);
+assert.match(zoned,/role="img" aria-label="Today&#39;s tokens by provider: Claude Code 500 of 1\.0k, Codex 3\.3k of 3\.0k"/);
+const custom=run(`budgetMeter({claude:500,codex:3300},8000,${JSON.stringify(both)})`);
+assert.match(custom,/flex-grow:2000"><span style="width:25%/);
+assert.match(custom,/flex-grow:6000"><span style="width:55%/);
+assert.match(custom,/class="marker" style="left:50%/);
+const stacked=run(`budgetMeter({claude:1000,codex:3000},8000,{total:0,parts:[],missing:['claude','codex']})`);
+assert.match(stacked,/split-meter stacked"><span class="claude" style="width:12\.5%"><\/span><span class="codex" style="width:37\.5%/);
+assert.match(stacked,/Claude Code<strong class="">1\.0k today · no share/);
+// Live limit sources and failed live checks.
+run(`state.data.limits={claude:{observed_at:state.data.at,source:'live',primary:{used_percent:30,window_minutes:300,resets_at:null}},
+  codex:{observed_at:state.data.at,source:'live',plan_type:'plus',primary:{used_percent:9,window_minutes:300,resets_at:null}}};
+  state.data.live_limits={checked_at:state.data.at,errors:{claude:'claude command not found'}}; renderLimits();`);
+assert.match(node('limits').innerHTML,/Checked with Claude Code's \/usage/);
+assert.match(node('limits').innerHTML,/Live check failed: claude command not found/);
+assert.match(node('limits').innerHTML,/Codex plus quota from the Codex app server/);
 console.log('Frontend grouping, combined usage, selection, sorting, filters, context details, and charts passed.');

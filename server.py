@@ -14,6 +14,11 @@ from archive import Archive, DEFAULT_DATA
 from codex_usage import merge_threads
 import claude_context
 import claude_limits
+import claude_statusline
+import live_limits
+
+LIVE_REUSE_SECONDS = 10  # Clicks within this many seconds share one live check.
+LIVE_INTERVAL = 300  # The collector also checks live limits this often, in seconds.
 
 # Standalone builds unpack the dashboard assets into PyInstaller's bundle folder.
 HERE = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent))
@@ -244,13 +249,17 @@ def latest_limits(sessions):
 
 
 class Store:
-    def __init__(self, codex, claude, data_dir=None, windows=None, config_warning=None, plan_usage=None, claude_limits_file=None):
+    def __init__(self, codex, claude, data_dir=None, windows=None, config_warning=None, plan_usage=None, claude_limits_file=None,
+                 live_file=None, live_tools=None, live_check=live_limits.check):
         self.codex, self.claude = codex, claude
         self.windows = claude_context.DEFAULT_WINDOWS if windows is None else windows
         self.config_warning = config_warning
         self.last_sessions = claude_context.LastSessions(claude)
         self.plan_usage = claude_limits.PlanUsage(plan_usage)
         self.claude_limits_file = claude_limits_file
+        self.live_file, self.live_tools, self.live_check = live_file, live_tools, live_check
+        self.live = claude_statusline.read_json(live_file) if live_file else {}
+        self.live_lock = threading.Lock()
         self.logs = {}
         self.lock = threading.Lock()
         self.snapshot = None
@@ -304,7 +313,8 @@ class Store:
             signature = tuple((s['id'], s['modified'], s['title']) for s in sessions)
             sessions = merge_threads(sessions)
             self.snapshot = dict(at=time.time(), sessions=sessions, sources=sources, warnings=warnings,
-                                 limits=self.limits(logs, sessions), accounting_version=2)
+                                 limits=self.limits(logs, sessions), accounting_version=2,
+                                 live_limits=dict(checked_at=self.live.get('checked_at'), errors=self.live.get('errors') or {}))
             if self.archive:
                 self.snapshot['archive'] = self.archive.update(self.snapshot, signature, force=force_save)
                 if self.snapshot['archive']['error']:
@@ -312,22 +322,52 @@ class Store:
             self.scanned = time.monotonic()
             return self.snapshot
 
+    def refresh_live(self):
+        """Ask Claude Code and Codex for current limits, then rescan. Failed checks keep the last good answer."""
+        with self.live_lock:
+            if time.time() - (self.live.get('checked_at') or 0) >= LIVE_REUSE_SECONDS:
+                tools = self.live_tools or dict(claude=live_limits.find_tool('claude'), codex=live_limits.find_tool('codex'))
+                folder = Path(self.live_file).parent if self.live_file else Path.home()
+                found = self.live_check(tools, str(folder if folder.is_dir() else Path.home()))
+                self.live = dict(found, **{p: found[p] or self.live.get(p) for p in ('claude', 'codex')})
+                if self.live_file:
+                    claude_statusline.write_json(self.live_file, self.live)
+        self.scanned = float('-inf')
+        return self.read()
+
     def limits(self, logs, sessions):
         result = latest_limits(sessions)
+        codex = self.live.get('codex')
+        if codex and codex.get('observed_at', 0) >= result.get('codex', {}).get('observed_at', 0):
+            result['codex'] = codex
         resets = {}
         for log in logs:
             for limit, at in log.quota_resets.items():
                 resets[limit] = max(resets.get(limit, 0), at)
-        claude = claude_limits.limits(self.plan_usage.read(), resets, time.time(), claude_limits.read_capture(self.claude_limits_file))
+        claude = claude_limits.limits(self.plan_usage.read(), resets, time.time(), claude_limits.read_capture(self.claude_limits_file), self.live.get('claude'))
         return dict(result, claude=claude) if claude else result
 
 
 class Handler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        host = self.headers.get('Host', '')
-        allowed = {f'127.0.0.1:{self.server.server_port}', f'localhost:{self.server.server_port}'}
-        if host not in allowed or self.headers.get('Sec-Fetch-Site') == 'cross-site':
+    def allowed(self):
+        hosts = {f'127.0.0.1:{self.server.server_port}', f'localhost:{self.server.server_port}'}
+        origin = self.headers.get('Origin')
+        if self.headers.get('Host', '') not in hosts or self.headers.get('Sec-Fetch-Site') == 'cross-site' or (
+                origin and urlsplit(origin).netloc not in hosts):
             self.send_error(403)
+            return False
+        return True
+
+    def do_POST(self):
+        if not self.allowed():
+            return
+        if urlsplit(self.path).path != '/api/refresh':
+            self.send_error(404)
+            return
+        self.reply(json.dumps(self.server.store.refresh_live(), separators=(',', ':'), allow_nan=False).encode(), 'application/json')
+
+    def do_GET(self):
+        if not self.allowed():
             return
         route = urlsplit(self.path).path
         if route == '/api/health':
@@ -355,6 +395,9 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self.send_error(404)
             return
+        self.reply(body, content_type)
+
+    def reply(self, body, content_type):
         self.send_response(200)
         self.send_header('Content-Type', content_type)
         self.send_header('Content-Length', str(len(body)))
@@ -382,7 +425,7 @@ def main():
     windows, config_warning = claude_context.load_windows(args.data_dir.parent / 'config.json')
     server.store = Store(args.codex_home, args.claude_home, args.data_dir, windows, config_warning,
                          claude_limits.desktop_folder() / 'plan-usage-history.json',
-                         args.data_dir.parent / 'claude-rate-limits.json')
+                         args.data_dir.parent / 'claude-rate-limits.json', args.data_dir.parent / 'live-limits.json')
     stop = threading.Event()
 
     def collect():
@@ -390,8 +433,14 @@ def main():
             server.store.read()
             stop.wait(2)
 
+    def check_live():
+        while not stop.is_set():
+            server.store.refresh_live()
+            stop.wait(LIVE_INTERVAL)
+
     collector = threading.Thread(target=collect, daemon=True)
     collector.start()
+    threading.Thread(target=check_live, daemon=True).start()
     print(f'Token Observatory: http://127.0.0.1:{server.server_port}', flush=True)
     try:
         server.serve_forever()

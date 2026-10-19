@@ -114,7 +114,7 @@ class AccountingTests(unittest.TestCase):
             (project/'configured.jsonl').write_text(reply('claude-opus-5-5')+reply('claude-opus-5-5', cache=300))
             (project/'marked.jsonl').write_text(reply('claude-sonnet-5-5', 'claude-sonnet-5-5[1m]'))
             (project/'ended.jsonl').write_text(reply('claude-haiku-5-5'))
-            (project/'plain.jsonl').write_text(reply('claude-haiku-5-5'))
+            (project/'plain.jsonl').write_text(reply('claude-haiku-4-5-20251001'))
             (root/'claude'/'.claude.json').write_text(json.dumps(dict(projects={'/p': dict(
                 lastSessionId='ended', lastCost=1.25, lastModelUsage={'claude-haiku-5-5[1m]': {}})})))
             sessions={s['session_id']:s for s in Store(root/'codex',root/'claude').read()['sessions']}
@@ -128,7 +128,7 @@ class AccountingTests(unittest.TestCase):
             self.assertIsNone(sessions['plain']['reported_cost'])
 
     def test_claude_window_config_overrides_and_rejects_invalid_values(self):
-        from claude_context import load_windows
+        from claude_context import DEFAULT_WINDOWS, load_windows
         with tempfile.TemporaryDirectory() as folder:
             config=Path(folder)/'config.json'
             config.write_text(json.dumps(dict(claude_context_windows={'claude-haiku-5-5':200000,'bad':-1})))
@@ -136,7 +136,8 @@ class AccountingTests(unittest.TestCase):
             self.assertEqual(windows['claude-haiku-5-5'],200000)
             self.assertNotIn('bad',windows)
             self.assertIn('bad',warning)
-            self.assertEqual(load_windows(Path(folder)/'missing.json'),({'claude-opus-5-5':1000000},None))
+            self.assertEqual(load_windows(Path(folder)/'missing.json'),(DEFAULT_WINDOWS,None))
+            self.assertEqual(DEFAULT_WINDOWS['claude-sonnet-5-5'],1000000)
 
     def test_latest_codex_quota_and_claude_hour_cache_writes(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -193,6 +194,57 @@ class AccountingTests(unittest.TestCase):
             self.assertAlmostEqual(claude['secondary']['resets_at'],now+5*86400)
             self.assertFalse(claude['secondary']['resets_estimated'])
             self.assertEqual(claude['source'],'statusline')
+
+    def test_newest_live_check_wins_for_both_providers(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)
+            now=time.time()
+            sessions=root/'codex'/'sessions'
+            sessions.mkdir(parents=True)
+            (sessions/'a.jsonl').write_text(json.dumps(dict(type='event_msg', timestamp='2026-10-17T12:00:00Z', payload=dict(type='token_count',
+                rate_limits=dict(primary=dict(used_percent=5, window_minutes=300, resets_at=1792365343)))))+'\n')
+            capture=root/'claude-rate-limits.json'
+            capture.write_text(json.dumps(dict(captured_at=now-600, five_hour=dict(used_percentage=10, resets_at=now+3600))))
+            live=root/'live-limits.json'
+            live.write_text(json.dumps(dict(checked_at=now-5, errors={},
+                claude=dict(primary=dict(used_percent=44, window_minutes=300, resets_at=now+3000), secondary=None, observed_at=now-5, source='live'),
+                codex=dict(primary=dict(used_percent=97, window_minutes=300, resets_at=now+100), observed_at=now-5, source='live'))))
+            limits=Store(root/'codex',root/'claude',claude_limits_file=capture,live_file=live).read()['limits']
+            self.assertEqual((limits['claude']['primary']['used_percent'],limits['claude']['source']),(44,'live'))
+            self.assertEqual((limits['codex']['primary']['used_percent'],limits['codex']['source']),(97,'live'))
+            # An older live check loses to a newer status line capture.
+            capture.write_text(json.dumps(dict(captured_at=now, five_hour=dict(used_percentage=12, resets_at=now+3600))))
+            self.assertEqual(Store(root/'codex',root/'claude',claude_limits_file=capture,live_file=live).read()['limits']['claude']['source'],'statusline')
+
+    def test_refresh_endpoint_checks_live_limits_and_saves_them(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)
+            calls=[]
+            def fake_check(tools, cwd, timeout=30):
+                calls.append(tools)
+                return dict(claude=dict(primary=dict(used_percent=33, window_minutes=300, resets_at=None), observed_at=time.time(), source='live'),
+                            codex=None, errors=dict(codex='codex command not found'), checked_at=time.time())
+            server=ThreadingHTTPServer(('127.0.0.1',0),Handler)
+            server.store=Store(root/'codex',root/'claude',live_file=root/'live-limits.json',live_tools=dict(claude='c',codex=None),live_check=fake_check)
+            thread=threading.Thread(target=server.serve_forever,daemon=True)
+            thread.start()
+            base=f'http://127.0.0.1:{server.server_port}'
+            try:
+                body=json.load(urllib.request.urlopen(urllib.request.Request(base+'/api/refresh',method='POST',data=b'')))
+                self.assertEqual(body['limits']['claude']['primary']['used_percent'],33)
+                self.assertEqual(body['live_limits']['errors'],dict(codex='codex command not found'))
+                self.assertEqual(json.loads((root/'live-limits.json').read_text())['claude']['primary']['used_percent'],33)
+                urllib.request.urlopen(urllib.request.Request(base+'/api/refresh',method='POST',data=b''))
+                self.assertEqual(len(calls),1)  # A second click within seconds reuses the check.
+                for headers in [{'Host':'evil.example'},{'Sec-Fetch-Site':'cross-site'},{'Origin':'http://evil.example'}]:
+                    with self.assertRaises(urllib.error.HTTPError) as error:
+                        urllib.request.urlopen(urllib.request.Request(base+'/api/refresh',method='POST',data=b'',headers=headers))
+                    self.assertEqual(error.exception.code,403)
+                with self.assertRaises(urllib.error.HTTPError) as error:
+                    urllib.request.urlopen(urllib.request.Request(base+'/api/usage',method='POST',data=b''))
+                self.assertEqual(error.exception.code,404)
+            finally:
+                server.shutdown();server.server_close();thread.join()
 
     def test_http_limits_and_live_append(self):
         with tempfile.TemporaryDirectory() as folder:

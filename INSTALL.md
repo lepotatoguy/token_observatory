@@ -86,7 +86,18 @@ Example:
 python3 server.py --port 8766 --claude-home /path/to/.claude --codex-home /path/to/.codex
 ```
 
-### Live Claude usage limits
+### Live usage limits
+
+When you open the dashboard, click **Refresh**, and every 5 minutes, the collector asks both tools for current usage:
+
+- Claude Code: `claude -p /usage`, the documented `/usage` report ([Agent SDK reference](https://code.claude.com/docs/en/agent-sdk/typescript)). It is a local command: no model request, no tokens, and no saved session. It needs a claude.ai Pro or Max sign-in.
+- Codex: `codex app-server` and its `account/rateLimits/read` method ([App Server docs](https://learn.chatgpt.com/docs/app-server)).
+
+Both tools use their own sign-in; Token Observatory never reads credentials. The `claude` and `codex` commands must be on `PATH` or in `/opt/homebrew/bin`, `/usr/local/bin`, `~/.local/bin` or `~/.claude/local`. If a check fails, the card says why and keeps the last good numbers. Results are saved as `live-limits.json` in the data folder.
+
+The status line below is optional. It records the limits after every reply in terminal sessions, which keeps them current between checks.
+
+### Claude status line
 
 Claude Code shares your plan's 5-hour and weekly usage with its status line after each reply (Pro and Max plans; see the [status line docs](https://code.claude.com/docs/en/statusline)). To have Token Observatory record them, add its status line to Claude Code's settings once:
 
@@ -99,17 +110,45 @@ Claude Code shares your plan's 5-hour and weekly usage with its status line afte
 
 This sets `statusLine` in `~/.claude/settings.json` (or `$CLAUDE_CONFIG_DIR/settings.json`) after saving a copy as `settings.json.bak`. It won't replace a status line you already have. Your terminal's status line then shows the model, context and both limits. Remove it with `--uninstall-statusline`.
 
-Without it, Claude limits fall back to the Claude desktop app's occasional usage samples, which can be hours old.
+The newest of the live check, the status line and the Claude desktop app's occasional usage samples is shown. The Claude desktop app's Code tab doesn't run status lines.
+
+### Conversation hooks
+
+Token Observatory can add two Claude Code [hooks](https://code.claude.com/docs/en/hooks) (`UserPromptSubmit` and `PostToolUse`). They run in terminal sessions and in the desktop app's Code tab, and add a note to the conversation when:
+
+- your 5-hour limit reaches 90%: the model is asked to finish or pause the current step, start no new work, and write a handoff summary (goal, state, done, not done, next steps, key files, open questions) to `.claude/handoffs/` in the project. Once per 5-hour window per conversation.
+- the conversation's context reaches 60% of its window: the model is asked to condense what it needs from earlier work, keep output short, and continue. Once each time the context crosses the threshold, so it can fire again after a compaction.
+
+A hook can't start compaction; the note asks the model to suggest `/compact` if the context keeps growing. To make Claude Code compact earlier by itself, its documented [auto-compact window](https://code.claude.com/docs/en/model-config#set-the-auto-compact-window) can be lowered, for example `/autocompact 600k` or `"autoCompactWindow": 600000` in `settings.json`. Token Observatory doesn't change it.
+
+Install or remove the hooks:
+
+| Install | Command |
+|---|---|
+| macOS release app | `"/Applications/Token Observatory.app/Contents/MacOS/TokenObservatory" --install-hooks` |
+| Linux `.deb` | `token-observatory --install-hooks` |
+| Windows | `TokenObservatory-<version>-windows-x64.exe --install-hooks` |
+| From source | `python3 launcher.py --install-hooks` |
+
+This adds entries to the `hooks` section of `~/.claude/settings.json` (backup in `settings.json.bak`) and keeps every other hook. Running it again changes nothing. When `~/.codex` exists, the same hooks go into `~/.codex/hooks.json` for [Codex](https://learn.chatgpt.com/docs/hooks), using Codex's own 5-hour limit and context window; Codex skips new hooks until you trust them with `/hooks`. `--uninstall-hooks` removes only Token Observatory's entries.
+
+Change the thresholds in `config.json` in the data folder:
+
+```json
+{"hook_limit_percent": 90, "hook_context_percent": 60}
+```
+
+The 5-hour number comes from the newest of the live check, the status line capture, the desktop app sample, and (for Codex) the conversation's own log. A number older than its window is ignored. Each hook run takes about 50 ms and never blocks or fails the conversation; on any error it prints nothing.
 
 ### Claude context window
 
-Claude Code transcripts don't record the context window size. To show a percentage, Token Observatory uses a recorded `[1m]` model ID when there is one, otherwise a window you configure per model. `claude-opus-5-5` defaults to 1,000,000. To add or change models, create `config.json` in the data folder (next to `history/`):
+Claude Code transcripts don't record the context window size. To show a percentage, Token Observatory uses a recorded `[1m]` model ID when there is one, otherwise a window you configure per model. Models Claude Code runs with a 1M window by default are preset to 1,000,000 (listed below). To add or change models, create `config.json` in the data folder (next to `history/`):
 
 ```json
 {"claude_context_windows": {"claude-sonnet-5-5": 1000000, "claude-haiku-5-5": 200000}}
 ```
 
-Restart the collector afterwards. The dashboard labels these values "configured capacity" so they aren't mistaken for logged ones.
+Restart the collector afterwards. The dashboard labels these values "configured capacity" so they aren't mistaken for logged ones. Models documented as 1M by default (`claude-opus-5-5`, `claude-opus-5`, `claude-opus-4-8`, `claude-opus-4-7`, `claude-sonnet-5-5`, `claude-sonnet-5`, `claude-haiku-5-5`) are preset.
 
 The server listens on `127.0.0.1` only and rejects requests whose `Host` header isn't the loopback address.
 
@@ -124,7 +163,7 @@ Then quit the running collector so the new version starts on next launch. On mac
 
 ## Uninstall
 
-If you added the Claude Code status line, remove it first with `--uninstall-statusline` (see [Live Claude usage limits](#live-claude-usage-limits)); otherwise Claude Code keeps calling a program that's gone.
+If you added the Claude Code status line or the conversation hooks, remove them first with `--uninstall-statusline` and `--uninstall-hooks` (see [Claude status line](#claude-status-line) and [Conversation hooks](#conversation-hooks)); otherwise Claude Code and Codex keep calling a program that's gone.
 
 ```sh
 ./uninstall.sh           # stop the collector and remove the app; keep saved history
@@ -138,6 +177,7 @@ If you added the Claude Code status line, remove it first with `--uninstall-stat
 | Dashboard says a log directory was not found | The tool hasn't been used on this machine, or it uses a custom home. Pass `--claude-home` or `--codex-home`, or set `CLAUDE_CONFIG_DIR` or `CODEX_HOME`. |
 | Browser shows "Collector disconnected" | The collector stopped. Reopen the app or run `token-observatory`, then check `service.log`. |
 | Port 8765 is in use | Another program owns the port. Use `--port` or `TOKEN_OBSERVATORY_PORT`. |
+| A limit shows "Live check failed" | The `claude` or `codex` command wasn't found or isn't signed in. Claude's `/usage` report needs a claude.ai Pro or Max sign-in. |
 | Numbers change only after a reply finishes | Expected. The tools write usage after each response, not while it streams. |
 | A chat is missing | Only sessions kept on local disk are read. Browser chats on claude.ai or chatgpt.com, and remote or cloud sessions, are not included. |
 

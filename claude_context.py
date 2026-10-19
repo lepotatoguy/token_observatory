@@ -3,8 +3,10 @@ import json
 from pathlib import Path
 
 ONE_MILLION = 1_000_000
-# Claude Code sessions on this model run with a 1M window. Users override or extend this in config.json.
-DEFAULT_WINDOWS = {'claude-opus-5-5': ONE_MILLION}
+# Models that run with a 1M window by default (https://code.claude.com/docs/en/model-config: Sonnet 5 and later,
+# Haiku 5.5, Opus 4.7 and later). Users override or extend this in config.json.
+DEFAULT_WINDOWS = {model: ONE_MILLION for model in ('claude-opus-5-5', 'claude-opus-5', 'claude-opus-4-8', 'claude-opus-4-7',
+                                                    'claude-sonnet-5-5', 'claude-sonnet-5', 'claude-haiku-5-5')}
 
 
 def load_windows(path):

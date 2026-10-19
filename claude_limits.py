@@ -1,5 +1,6 @@
 """Claude plan usage from local files, best source first.
 
+- A live check with `claude -p /usage` (live_limits.py), saved by the collector to live-limits.json.
 - Claude Code's status line input (documented at https://code.claude.com/docs/en/statusline), saved
   by `launcher.py --statusline` to claude-rate-limits.json: exact percentages and reset times.
 - The Claude desktop app keeps recent usage samples in plan-usage-history.json: u.fh is the
@@ -71,12 +72,16 @@ def captured_window(window, minutes):
                 resets_at=window.get('resets_at'), resets_estimated=False)
 
 
-def limits(plan, resets, now, capture=None):
+def limits(plan, resets, now, capture=None, live=None):
     """Combine the best available usage percentages and reset times, shaped like Codex limits."""
-    if capture and capture['captured_at'] >= (plan or {}).get('observed_at', 0):
-        return dict(primary=captured_window(capture.get('five_hour'), FIVE_HOURS),
-                    secondary=captured_window(capture.get('seven_day'), WEEK_MINUTES),
-                    observed_at=capture['captured_at'], source='statusline')
+    found = [live] if isinstance(live, dict) and isinstance(live.get('observed_at'), (int, float)) else []
+    if capture:
+        found.append(dict(primary=captured_window(capture.get('five_hour'), FIVE_HOURS),
+                          secondary=captured_window(capture.get('seven_day'), WEEK_MINUTES),
+                          observed_at=capture['captured_at'], source='statusline'))
+    newest = max(found, key=lambda f: f['observed_at'], default=None)
+    if newest and newest['observed_at'] >= (plan or {}).get('observed_at', 0):
+        return newest
     if not plan and not resets:
         return None
     plan = plan or {}

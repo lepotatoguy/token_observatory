@@ -14,9 +14,11 @@ import urllib.request
 import webbrowser
 
 from archive import DEFAULT_DATA
+import claude_limits
 import claude_statusline
+import session_hooks
 
-VERSION = '1.1.0'  # Release tags must match; the PyInstaller spec reads it from here.
+VERSION = '1.2.0'  # Release tags must match; the PyInstaller spec reads it from here.
 STARTUP_SECONDS = 60  # First launches can wait on OS malware scans; one-file builds also unpack first.
 PID_FILE = DEFAULT_DATA / 'collector.pid'
 LOG_FILE = DEFAULT_DATA / 'service.log'
@@ -98,6 +100,10 @@ def main():
     parser.add_argument('--statusline', action='store_true', help='status line mode for Claude Code: save its rate limits')
     parser.add_argument('--install-statusline', action='store_true', help="add the status line to Claude Code's settings")
     parser.add_argument('--uninstall-statusline', action='store_true', help="remove it from Claude Code's settings")
+    parser.add_argument('--hook', nargs='?', const='claude', choices=('claude', 'codex'),
+                        help='hook mode for Claude Code or Codex: 5-hour limit and context reminders')
+    parser.add_argument('--install-hooks', action='store_true', help='add the hooks to Claude Code (and Codex, when set up)')
+    parser.add_argument('--uninstall-hooks', action='store_true', help='remove them')
     parser.add_argument('--serve', action='store_true', help=argparse.SUPPRESS)
     parser.add_argument('--version', action='version', version=f'Token Observatory {VERSION}')
     args = parser.parse_args()
@@ -107,6 +113,16 @@ def main():
     if args.statusline:
         say(claude_statusline.capture(sys.stdin, CLAUDE_LIMITS_FILE))
         return 0
+    if args.hook:
+        output = session_hooks.run(sys.stdin, args.hook, DEFAULT_DATA, claude_limits.desktop_folder() / 'plan-usage-history.json')
+        if output:
+            say(output)
+        return 0
+    if args.install_hooks or args.uninstall_hooks:
+        results = session_hooks.update_hooks(install=args.install_hooks)
+        for ok, message in results:
+            say(message, error=not ok)
+        return 0 if all(ok for ok, _ in results) else 1
     if args.install_statusline or args.uninstall_statusline:
         ok, message = claude_statusline.update_settings(install=args.install_statusline)
         say(message, error=not ok)

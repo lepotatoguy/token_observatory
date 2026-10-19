@@ -34,10 +34,12 @@ The dashboard opens in your browser at <http://127.0.0.1:8765>. The first launch
 - **Export CSV** and **Export JSON** save what you're looking at.
 - A saved copy is kept for each day. Pick a date next to the time range to look back.
 - Click any day's bar in **Token activity** to see just that day. Click the date chip to go back.
-- **Usage limits** shows how much of your Claude and Codex 5-hour and weekly quota you've used and when each resets. For live Claude numbers, add the Token Observatory status line to Claude Code once (see [INSTALL.md](INSTALL.md#live-claude-usage-limits)); otherwise they come from the Claude desktop app's last check.
-- **Today's budget** compares today's tokens with a suggested daily amount that keeps you within your weekly limits. You can also set your own target.
+- **Usage limits** shows how much of your Claude and Codex 5-hour and weekly quota you've used and when each resets. **Refresh** (top right) asks Claude Code and Codex for the current numbers, and the collector also checks every 5 minutes. Opening or reloading the dashboard checks too.
+- **Today's budget** compares today's tokens with a suggested daily amount that keeps you within your weekly limits. The meter has one part for Claude Code and one for Codex, each sized by that tool's suggested share, with a line per tool underneath. You can also set your own target.
 - **Breakdown** splits usage by model or project; **Trends** compares today with your recent average and shows when you use tokens most.
 - Turn on **Alerts** (top right) for a desktop notification when a chat's context is almost full or you pass your budget.
+
+- Optional **conversation hooks** (see [INSTALL.md](INSTALL.md#conversation-hooks)): near the 5-hour limit, the running Claude Code or Codex chat is asked to stop and write a handoff summary; when its context passes 60%, it is asked to condense and continue.
 
 Numbers update after each reply finishes, not while it's being written.
 
@@ -62,7 +64,7 @@ Screenshots use synthetic demo data.
 ## Good to know
 
 - Only chats saved on this computer appear. Chats on claude.ai or chatgpt.com don't.
-- Claude Code doesn't record the size of its context window. Token Observatory assumes 1M tokens for Opus 5.5; you can set other models yourself (see [INSTALL.md](INSTALL.md#claude-context-window)).
+- Claude Code doesn't record the size of its context window. Token Observatory assumes 1M tokens for the models Claude Code documents as 1M by default (Opus 4.7 and later, Sonnet 5 and later, Haiku 5.5); you can set other models yourself (see [INSTALL.md](INSTALL.md#claude-context-window)).
 - Values a tool doesn't record are shown as "Unreported", never guessed.
 
 ## More

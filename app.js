@@ -1,6 +1,6 @@
 'use strict';
 const $ = id => document.getElementById(id);
-const state = {data:null, provider:'all', selected:null, paused:false, sort:'recent', sortDirection:'desc', day:null, fetching:false, history:'', archive:null};
+const state = {data:null, provider:'all', selected:null, paused:false, refreshing:false, sort:'recent', sortDirection:'desc', day:null, fetching:false, history:'', archive:null};
 const nowSeconds = () => state.history && state.data ? state.data.at : Date.now()/1000;
 const fields = ['input','cached','write','output'];
 const colors = ['#8caa77','#aaa0c5','#88a6b5','#d9916b'];
@@ -188,6 +188,20 @@ async function refresh() {
     $('warning').hidden=false;$('warning').textContent=`Cannot read collector: ${error.message}. Start server.py and reload. Displayed data may be stale.`;
   } finally {state.fetching=false;}
 }
+// Refresh rescans logs and asks Claude Code and Codex for current limits (the collector reuses a check for a few seconds).
+async function refreshLimits() {
+  if(state.history || state.refreshing)return;
+  state.refreshing=true;$('refreshButton').disabled=true;$('refreshButton').textContent='Checking limits…';
+  try {
+    const response=await fetch('/api/refresh',{method:'POST',cache:'no-store'});
+    if(!response.ok)throw new Error(`HTTP ${response.status}`);
+    const data=await response.json();
+    if(!state.history && !state.paused){state.data=data;state.archive=data.archive || null;render();}
+  } catch(error) {
+    $('warning').hidden=false;$('warning').textContent=`Refresh failed: ${error.message}. Limits may be out of date.`;
+  } finally {state.refreshing=false;$('refreshButton').disabled=!!state.history;$('refreshButton').textContent='Refresh';}
+}
+$('refreshButton').addEventListener('click',refreshLimits);
 document.querySelectorAll('[data-provider]').forEach(button=>button.addEventListener('click',()=>{state.provider=button.dataset.provider;document.querySelectorAll('[data-provider]').forEach(b=>b.classList.toggle('selected',b===button));render();}));
 $('range').addEventListener('change',()=>{state.day=null;render();});
 $('agents').addEventListener('change',render);
@@ -217,6 +231,7 @@ $('history').addEventListener('change',async()=>{
   state.history=day;
   state.paused=false;
   $('pauseButton').disabled=!!day;
+  $('refreshButton').disabled=!!day;
   $('pauseButton').textContent='Pause';
   if(!day){await refresh();return;}
   $('connectionText').textContent='Loading saved history';
@@ -258,4 +273,4 @@ $('exportButton').addEventListener('click',()=>{
   const rows=scoped().filter(s=>`${s.title} ${s.model} ${s.project} ${s.session_id}`.toLowerCase().includes($('search').value.toLowerCase())).map(s=>[s.provider,s.title,s.session_id,s.model,...[...fields,'reasoning','total'].map(k=>s.usage_source==='unavailable'?'':s.scope[k]),s.last?new Date(s.last*1000).toISOString():'']);
   downloadFile('\ufeff'+[columns,...rows].map(row=>row.map(cell).join(',')).join('\r\n'),'text/csv;charset=utf-8',`token-usage-${new Date().toISOString().slice(0,10)}.csv`);
 });
-refresh();setInterval(refresh,2000);
+refresh();refreshLimits();setInterval(refresh,2000);
