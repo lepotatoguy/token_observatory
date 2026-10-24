@@ -107,6 +107,8 @@ To release:
 | `server.py` | Log discovery, parsing, HTTP API (`/api/usage`, `/api/history/<day>`, `/api/health`, `POST /api/refresh`) |
 | `codex_usage.py`, `claude_context.py` | Codex accounting; Claude capacity and cost |
 | `claude_limits.py`, `claude_statusline.py` | Claude usage limits; status line capture and settings install |
+| `pricing.py` | Downloads and parses Anthropic's published prices daily (`GET /api/pricing`), plus `config.json` price overrides |
+| `prices.json` | Bundled fallback prices used when the online prices cannot be fetched |
 | `live_limits.py` | Live limit checks through `claude -p /usage` and `codex app-server` |
 | `session_hooks.py` | Conversation hooks for the 5-hour limit and context, and their install |
 | `archive.py` | Daily JSON snapshots and per-platform data folder |

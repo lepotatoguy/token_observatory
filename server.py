@@ -16,6 +16,7 @@ import claude_context
 import claude_limits
 import claude_statusline
 import live_limits
+import pricing
 
 LIVE_REUSE_SECONDS = 10  # Clicks within this many seconds share one live check.
 LIVE_INTERVAL = 300  # The collector also checks live limits this often, in seconds.
@@ -384,6 +385,9 @@ class Handler(BaseHTTPRequestHandler):
                 return
             body = json.dumps(snapshot, separators=(',', ':'), allow_nan=False).encode()
             content_type = 'application/json'
+        elif route == '/api/pricing':
+            body = json.dumps(self.server.pricing.snapshot(), separators=(',', ':'), allow_nan=False).encode()
+            content_type = 'application/json'
         elif route == '/api/usage':
             body = json.dumps(self.server.store.read(), separators=(',', ':'), allow_nan=False).encode()
             content_type = 'application/json'
@@ -426,6 +430,7 @@ def main():
     server.store = Store(args.codex_home, args.claude_home, args.data_dir, windows, config_warning,
                          claude_limits.desktop_folder() / 'plan-usage-history.json',
                          args.data_dir.parent / 'claude-rate-limits.json', args.data_dir.parent / 'live-limits.json')
+    server.pricing = pricing.Pricing(args.data_dir.parent / 'pricing.json', args.data_dir.parent / 'config.json')
     stop = threading.Event()
 
     def collect():
@@ -438,9 +443,15 @@ def main():
             server.store.refresh_live()
             stop.wait(LIVE_INTERVAL)
 
+    def update_prices():
+        while not stop.is_set():
+            server.pricing.update(cancelled=stop.is_set)
+            stop.wait(3600)
+
     collector = threading.Thread(target=collect, daemon=True)
     collector.start()
     threading.Thread(target=check_live, daemon=True).start()
+    threading.Thread(target=update_prices, daemon=True).start()
     print(f'Token Observatory: http://127.0.0.1:{server.server_port}', flush=True)
     try:
         server.serve_forever()

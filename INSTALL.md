@@ -182,3 +182,13 @@ If you added the Claude Code status line or the conversation hooks, remove them 
 | A chat is missing | Only sessions kept on local disk are read. Browser chats on claude.ai or chatgpt.com, and remote or cloud sessions, are not included. |
 
 The service log is `service.log` in the history folder listed for your platform above.
+
+## Cost estimates
+
+The **Estimated cost** card prices each model's tokens at published API list prices. The collector downloads Anthropic's pricing page (read-only, no data sent) about once a day and caches the parsed prices as `pricing.json` in the data folder; if the download fails it keeps the last good prices and falls back to `prices.json`, which ships with the app (edit it to change the fallback). OpenAI publishes no machine-readable price page, so those models use the estimates in `prices.json`. Set or correct any model in `config.json`:
+
+```json
+{"prices": {"gpt-6-luna": {"input": 0.1, "cache_read": 0.01, "output": 0.5}}, "price_updates": false}
+```
+
+`cache_read` and `cache_write` default to `input`; per-million-token USD. `"price_updates": false` stops the download. Models with no known price are left out of the total.

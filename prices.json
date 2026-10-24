@@ -1,0 +1,29 @@
+{
+ "_comment": "Bundled fallback prices, USD per million tokens: rates = [input, 5m cache write, 1h cache write, cache read, output]. Used when the online prices cannot be fetched. 'estimated' marks rates not confirmed on an official page. Edit freely; config.json 'prices' overrides these.",
+ "updated": "2026-10-24",
+ "source": "https://platform.claude.com/docs/en/about-claude/pricing.md",
+ "models": [
+  {"match": "mythos-5\\-1(?![-.]?\\d{1,2}(?!\\d))", "rates": [10.0, 12.5, 20.0, 0.25, 50.0], "long_rates": null, "estimated": false},
+  {"match": "sonnet-5\\-5(?![-.]?\\d{1,2}(?!\\d))", "rates": [2.0, 2.5, 4.0, 0.1, 10.0], "long_rates": null, "estimated": false},
+  {"match": "sonnet-4\\-6(?![-.]?\\d{1,2}(?!\\d))", "rates": [3.0, 3.75, 6.0, 0.3, 15.0], "long_rates": null, "estimated": false},
+  {"match": "sonnet-4\\-5(?![-.]?\\d{1,2}(?!\\d))", "rates": [3.0, 3.75, 6.0, 0.3, 15.0], "long_rates": null, "estimated": false},
+  {"match": "fable-5\\-1(?![-.]?\\d{1,2}(?!\\d))", "rates": [10.0, 12.5, 20.0, 0.25, 50.0], "long_rates": null, "estimated": false},
+  {"match": "haiku-5\\-5(?![-.]?\\d{1,2}(?!\\d))", "rates": [0.1, 0.125, 0.2, 0.01, 0.5], "long_rates": [0.5, 0.625, 1.0, 0.05, 2.5], "estimated": false},
+  {"match": "haiku-4\\-5(?![-.]?\\d{1,2}(?!\\d))", "rates": [1.0, 1.25, 2.0, 0.1, 5.0], "long_rates": null, "estimated": false},
+  {"match": "haiku-3\\-5(?![-.]?\\d{1,2}(?!\\d))", "rates": [0.8, 1.0, 1.6, 0.08, 4.0], "long_rates": null, "estimated": false},
+  {"match": "opus-5\\-5(?![-.]?\\d{1,2}(?!\\d))", "rates": [4.0, 5.0, 8.0, 0.2, 20.0], "long_rates": null, "estimated": false},
+  {"match": "opus-4\\-8(?![-.]?\\d{1,2}(?!\\d))", "rates": [5.0, 6.25, 10.0, 0.5, 25.0], "long_rates": null, "estimated": false},
+  {"match": "opus-4\\-7(?![-.]?\\d{1,2}(?!\\d))", "rates": [5.0, 6.25, 10.0, 0.5, 25.0], "long_rates": null, "estimated": false},
+  {"match": "opus-4\\-6(?![-.]?\\d{1,2}(?!\\d))", "rates": [5.0, 6.25, 10.0, 0.5, 25.0], "long_rates": null, "estimated": false},
+  {"match": "opus-4\\-5(?![-.]?\\d{1,2}(?!\\d))", "rates": [5.0, 6.25, 10.0, 0.5, 25.0], "long_rates": null, "estimated": false},
+  {"match": "opus-4\\-1(?![-.]?\\d{1,2}(?!\\d))", "rates": [15.0, 18.75, 30.0, 1.5, 75.0], "long_rates": null, "estimated": false},
+  {"match": "mythos-5(?![-.]?\\d{1,2}(?!\\d))", "rates": [10.0, 12.5, 20.0, 1.0, 50.0], "long_rates": null, "estimated": false},
+  {"match": "sonnet-5(?![-.]?\\d{1,2}(?!\\d))", "rates": [2.0, 2.5, 4.0, 0.2, 10.0], "long_rates": null, "estimated": false},
+  {"match": "sonnet-4(?![-.]?\\d{1,2}(?!\\d))", "rates": [3.0, 3.75, 6.0, 0.3, 15.0], "long_rates": null, "estimated": false},
+  {"match": "fable-5(?![-.]?\\d{1,2}(?!\\d))", "rates": [10.0, 12.5, 20.0, 1.0, 50.0], "long_rates": null, "estimated": false},
+  {"match": "opus-5(?![-.]?\\d{1,2}(?!\\d))", "rates": [5.0, 6.25, 10.0, 0.5, 25.0], "long_rates": null, "estimated": false},
+  {"match": "opus-4(?![-.]?\\d{1,2}(?!\\d))", "rates": [15.0, 18.75, 30.0, 1.5, 75.0], "long_rates": null, "estimated": false},
+  {"match": "gpt-6(\\.1)?-sol", "rates": [2, 2, 2, 0.1, 10], "long_rates": null, "estimated": true},
+  {"match": "gpt-6-luna", "rates": [0.1, 0.1, 0.1, 0.005, 0.5], "long_rates": null, "estimated": true}
+ ]
+}
