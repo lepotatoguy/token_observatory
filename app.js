@@ -1,6 +1,6 @@
 'use strict';
 const $ = id => document.getElementById(id);
-const state = {data:null, provider:'all', selected:null, paused:false, refreshing:false, sort:'recent', sortDirection:'desc', day:null, fetching:false, history:'', archive:null};
+const state = {data:null, provider:'all', selected:null, paused:false, refreshing:false, sort:'recent', sortDirection:'desc', day:null, fetching:false, history:'', archive:null, expanded:new Set()};
 const nowSeconds = () => state.history && state.data ? state.data.at : Date.now()/1000;
 const fields = ['input','cached','write','output'];
 const colors = ['#8caa77','#aaa0c5','#88a6b5','#d9916b'];
@@ -70,6 +70,11 @@ function relative(at) {
 function stat(label,value,note,icon) {
   return `<div class="metric"><span>${label}</span><span class="metric-icon">${icon}</span><strong title="${exact(value)}">${compact(value)}</strong><small>${note}</small></div>`;
 }
+function costCard(sessions) {
+  const {cost, unpriced, estimated} = costOf(sessions);
+  const note = unpriced.length ? `${unpriced.length} unpriced model${unpriced.length===1?'':'s'} excluded` : estimated ? 'List API prices; some cache rates estimated' : 'At list API prices';
+  return `<div class="metric"><span>Estimated cost</span><span class="metric-icon">$</span><strong title="${unpriced.length ? 'Unpriced: '+escapeHTML(unpriced.join(', ')) : 'Input, cache and output at published per-token prices'}">${money(cost)}</strong><small>${note}</small></div>`;
+}
 function render() {
   if (!state.data) return;
   const sessions=scoped(), events=sessions.flatMap(s => s.events), totals=sum(events);
@@ -79,7 +84,7 @@ function render() {
   $('metrics').innerHTML=stat('Recorded tokens',totals.total,`${exact(sessions.length)} chats · ${missing} unreported`,'◈')+
     stat('Input tokens',cacheInput,'Fresh input + cache reads + writes','↗')+
     stat('Output tokens',totals.output,`${exact(totals.reasoning)} recorded reasoning tokens included`,'↙')+
-    `<div class="metric"><span>Cache read share</span><span class="metric-icon">◴</span><strong>${hit}<span style="font-size:17px">%</span></strong><small title="${exact(totals.cached)} cached tokens">${compact(totals.cached)} input tokens served from cache</small></div>`;
+    `<div class="metric"><span>Cache read share</span><span class="metric-icon">◴</span><strong>${hit}<span style="font-size:17px">%</span></strong><small title="${exact(totals.cached)} cached tokens">${compact(totals.cached)} input tokens served from cache</small></div>`+costCard(sessions);
   renderChart(events);
   renderInsights(sessions);
   $('dayFilter').hidden=!state.day;

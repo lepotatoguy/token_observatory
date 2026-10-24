@@ -2,6 +2,14 @@
 
 All notable changes to Token Observatory. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **Estimated cost** card, priced per model from published API list prices (cache reads, cache writes and output priced separately). Models without a known price are excluded and named in the card's tooltip. OpenAI cache-read rates are partly estimated.
+- Breakdown rows expand to show fresh input, cache read, cache write, output and cost, and carry separate input and output meters with written totals.
+- Clicking **Other** in the breakdown lists every grouped model or project.
+
 ## [1.2.0] - 2026-10-19
 
 ### Added

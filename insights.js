@@ -169,15 +169,64 @@ function saveBudget(event) {
   renderBudget();
 }
 
-// Breakdown by model or project, with each group's share and cache reuse.
+// Published API prices in USD per million tokens: [input, 5m cache write, 1h cache write, cache read, output].
+// Anthropic: platform.claude.com/docs/en/about-claude/pricing. OpenAI cache-read rates were not published
+// for every model; those marked estimated use the one documented ratio (0.05x input for gpt-6.1-sol).
+const PRICES = [
+  [/(fable|mythos)-5-1/, [10, 12.5, 20, 0.25, 50]],
+  [/(fable|mythos)-5/, [10, 12.5, 20, 1, 50]],
+  [/opus-5-5/, [4, 5, 8, 0.2, 20]],
+  [/opus-(5|4-[5-8])/, [5, 6.25, 10, 0.5, 25]],
+  [/opus-4/, [15, 18.75, 30, 1.5, 75]],
+  [/sonnet-5-5/, [2, 2.5, 4, 0.1, 10]],
+  [/sonnet-5/, [2, 2.5, 4, 0.2, 10]],
+  [/sonnet-4/, [3, 3.75, 6, 0.3, 15]],
+  [/haiku-5-5/, [0.1, 0.125, 0.2, 0.01, 0.5], [0.5, 0.625, 1, 0.05, 2.5]],
+  [/haiku-4-5/, [1, 1.25, 2, 0.1, 5]],
+  [/haiku-3-5/, [0.8, 1, 1.6, 0.08, 4]],
+  [/gpt-6(\.1)?-sol/, [2, 2, 2, 0.1, 10], null, true],
+  [/gpt-6-luna/, [0.1, 0.1, 0.1, 0.005, 0.5], null, true],
+];
+const LONG_PROMPT = 100000;
+function priceFor(model) {
+  const id = String(model || '').toLowerCase();
+  return PRICES.find(p => p[0].test(id));
+}
+// Cost of one event; Haiku 5.5 switches to its higher rates for prompts over 100k tokens.
+function eventCost(e, model) {
+  const entry = priceFor(e.model || model);
+  if (!entry) return null;
+  const prompt = (e.input || 0) + (e.cached || 0) + (e.write || 0);
+  const rate = entry[2] && prompt > LONG_PROMPT ? entry[2] : entry[1];
+  const write1h = Math.min(e.write_1h || 0, e.write || 0);
+  return ((e.input || 0) * rate[0] + ((e.write || 0) - write1h) * rate[1] + write1h * rate[2] + (e.cached || 0) * rate[3] + (e.output || 0) * rate[4]) / 1e6;
+}
+function costOf(sessions) {
+  let cost = 0, unpriced = new Set(), estimated = false;
+  for (const s of sessions) for (const e of s.events) {
+    const c = eventCost(e, s.model);
+    if (c === null) { if (eventTotal(e)) unpriced.add(e.model || s.model || 'Unreported'); continue; }
+    cost += c;
+    if (priceFor(e.model || s.model)[3]) estimated = true;
+  }
+  return {cost, unpriced:[...unpriced], estimated};
+}
+const money = n => n >= 100 ? `$${Math.round(n).toLocaleString()}` : `$${n.toFixed(2)}`;
+
+// Breakdown by model or project, with each group's input, output, cache reuse and cost.
 function breakdownRows(sessions, by) {
   const groups = new Map();
   for (const s of sessions) for (const e of s.events) {
     const name = by === 'model' ? (e.model || s.model || 'Unreported') : (s.project || 'Unknown project');
-    const group = groups.get(name) || {name, total:0, cached:0, input:0, chats:new Set()};
+    const group = groups.get(name) || {name, total:0, cached:0, input:0, fresh:0, write:0, output:0, cost:0, priced:false, chats:new Set()};
     group.total += eventTotal(e);
     group.cached += e.cached || 0;
     group.input += (e.input || 0) + (e.cached || 0) + (e.write || 0);
+    group.fresh += e.input || 0;
+    group.write += e.write || 0;
+    group.output += e.output || 0;
+    const cost = eventCost(e, s.model);
+    if (cost !== null) { group.cost += cost; group.priced = true; }
     group.chats.add(s.id);
     groups.set(name, group);
   }
@@ -189,21 +238,48 @@ function lowestCacheChat(sessions) {
     .map(x => ({...x, hit:percent(x.s.scope.cached, x.input)}))
     .sort((a, b) => a.hit - b.hit)[0];
 }
+function mergeRows(name, rows, extra = {}) {
+  const sum = k => rows.reduce((n, r) => n + r[k], 0);
+  return {name, total:sum('total'), cached:sum('cached'), input:sum('input'), fresh:sum('fresh'), write:sum('write'), output:sum('output'), cost:sum('cost'),
+    priced:rows.some(r => r.priced), chats:new Set(rows.flatMap(r => [...r.chats])), ...extra};
+}
+function breakdownDetail(r) {
+  const cells = [['Fresh input', r.fresh], ['Cache read', r.cached], ['Cache write', r.write], ['Output', r.output]]
+    .map(([label, n]) => `<div><span>${label}</span><strong title="${exact(n)}">${compact(n)}</strong></div>`).join('');
+  const cost = `<div><span>Est. cost</span><strong>${r.priced ? money(r.cost) : 'No price'}</strong></div>`;
+  const filter = r.other ? '' : `<button type="button" class="link" data-filter="${escapeHTML(r.name)}">Filter conversations to ${escapeHTML(r.name)}</button>`;
+  return `<div class="breakdown-detail">${cells}${cost}${filter}</div>`;
+}
+function breakdownItem(r, grand, top, key) {
+  const open = state.expanded.has(key);
+  const inputShare = percent(r.input, top.input), outputShare = percent(r.output, top.output);
+  return `<div class="breakdown-group${open ? ' open' : ''}"><div class="breakdown-item"><button type="button" class="breakdown-name" data-expand="${escapeHTML(key)}" aria-expanded="${open}" title="${open ? 'Hide' : 'Show'} input and output"><i class="chevron">▸</i>${escapeHTML(r.name)}</button>
+    <span class="breakdown-meters"><span class="breakdown-bar input" title="Input ${exact(r.input)}"><span style="width:${inputShare}%"></span></span><span class="breakdown-bar output" title="Output ${exact(r.output)}"><span style="width:${outputShare}%"></span></span></span>
+    <span class="breakdown-io" title="Input incl. cache / output"><b>In</b> ${compact(r.input)} <b>Out</b> ${compact(r.output)}</span>
+    <strong title="${exact(r.total)}">${compact(r.total)}</strong><span>${percent(r.total, grand).toFixed(1)}%</span><span title="Share of input served from cache">${percent(r.cached, r.input).toFixed(0)}% cached</span></div>${open ? breakdownDetail(r) : ''}</div>`;
+}
 function renderBreakdown(sessions) {
   const by = saved.get('breakdownBy', 'model'), rows = breakdownRows(sessions, by);
   const grand = rows.reduce((n, r) => n + r.total, 0);
+  const top = {input:Math.max(1, ...rows.map(r => r.input)), output:Math.max(1, ...rows.map(r => r.output))};
   const shown = rows.slice(0, BREAKDOWN_ROWS), rest = rows.slice(BREAKDOWN_ROWS);
-  if (rest.length) shown.push({name:`Other (${rest.length})`, total:rest.reduce((n, r) => n + r.total, 0), cached:rest.reduce((n, r) => n + r.cached, 0), input:rest.reduce((n, r) => n + r.input, 0), chats:new Set(rest.flatMap(r => [...r.chats])), other:true});
-  const table = shown.length ? shown.map(r => `<div class="breakdown-item"><button type="button" class="breakdown-name"${r.other ? ' disabled' : ` data-filter="${escapeHTML(r.name)}" title="Show only ${escapeHTML(r.name)}"`}>${escapeHTML(r.name)}</button><span class="breakdown-bar"><span style="width:${percent(r.total, grand)}%"></span></span><strong title="${exact(r.total)}">${compact(r.total)}</strong><span>${percent(r.total, grand).toFixed(1)}%</span><span title="Share of input served from cache">${percent(r.cached, r.input).toFixed(0)}% cached</span></div>`).join('') : '<div class="empty-state">No usage in this range.</div>';
+  const items = shown.map(r => breakdownItem(r, grand, top, `${by}:${r.name}`));
+  if (rest.length) {
+    const other = mergeRows(`Other (${rest.length})`, rest, {other:true});
+    items.push(breakdownItem(other, grand, top, `${by}:other`));
+    if (state.expanded.has(`${by}:other`)) items.push(...rest.map(r => `<div class="breakdown-nested">${breakdownItem(r, grand, top, `${by}:${r.name}`)}</div>`));
+  }
+  const table = items.length ? items.join('') : '<div class="empty-state">No usage in this range.</div>';
   const low = lowestCacheChat(sessions);
   const lowNote = low ? `<p class="insight-note">Lowest cache reuse: <button type="button" class="link" data-select="${escapeHTML(low.s.id)}">${escapeHTML(low.s.title)}</button> at ${low.hit.toFixed(0)}% of input from cache.</p>` : '';
-  $('breakdown').innerHTML = `<div class="panel-heading"><div><h2>Breakdown</h2><p>Tokens in the selected range. Click a name to filter.</p></div><div class="segmented small">${['model','project'].map(k => `<button type="button" data-breakdown="${k}" class="${k === by ? 'selected' : ''}">By ${k}</button>`).join('')}</div></div><div class="breakdown-table">${table}</div>${lowNote}`;
+  $('breakdown').innerHTML = `<div class="panel-heading"><div><h2>Breakdown</h2><p>Tokens in the selected range. Click a name to see input and output.</p></div><div class="segmented small">${['model','project'].map(k => `<button type="button" data-breakdown="${k}" class="${k === by ? 'selected' : ''}">By ${k}</button>`).join('')}</div></div><div class="breakdown-legend"><span><i class="swatch input"></i>Input incl. cache</span><span><i class="swatch output"></i>Output</span></div><div class="breakdown-table">${table}</div>${lowNote}`;
 }
 function breakdownAction(event) {
-  const toggle = event.target.closest('[data-breakdown]'), filter = event.target.closest('[data-filter]');
+  const toggle = event.target.closest('[data-breakdown]'), filter = event.target.closest('[data-filter]'), expand = event.target.closest('[data-expand]');
   if (toggle) saved.set('breakdownBy', toggle.dataset.breakdown);
   if (filter) $('search').value = filter.dataset.filter;
-  if (toggle || filter) render();
+  if (expand) { const key = expand.dataset.expand; if (!state.expanded.delete(key)) state.expanded.add(key); }
+  if (toggle || filter || expand) render();
 }
 
 // Trends from every retained log, ignoring the time range so comparisons stay stable.

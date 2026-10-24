@@ -140,6 +140,29 @@ assert.equal(run('scoped().length'),2);
 assert.equal(node('dayFilter').hidden,true);
 assert.equal(run("JSON.stringify(breakdownRows(scoped(),'model').map(r=>[r.name,r.total]))"),'[["m1",410],["m2",105]]');
 assert.equal(run("breakdownRows(scoped(),'project')[1].name"),'beta');
+// Pricing, cost card, expandable rows and the Other group.
+assert.equal(run("eventCost({input:1e6,cached:1e6,write:1e6,write_1h:0,output:1e6},'claude-opus-4-7')"),5+0.5+6.25+25);
+assert.equal(run("eventCost({input:1e6,output:1e6},'claude-sonnet-5-5')"),12);
+assert.ok(Math.abs(run("eventCost({input:1e5,output:1e6},'claude-haiku-5-5')")-0.51)<1e-9);
+assert.ok(Math.abs(run("eventCost({input:100001,output:1e6},'claude-haiku-5-5')")-2.5500005)<1e-9);
+assert.equal(run("eventCost({input:1,output:1},'mystery-model')"),null);
+assert.equal(run("breakdownRows(scoped(),'model')[0].output"),10);
+run("state.expanded.clear(); renderBreakdown(scoped())");
+assert.doesNotMatch(node('breakdown').innerHTML,/breakdown-detail/);
+assert.match(node('breakdown').innerHTML,/<b>In<\/b>/);
+run("state.expanded.add('model:m1'); renderBreakdown(scoped())");
+assert.match(node('breakdown').innerHTML,/Cache write/);
+run(`state.expanded.clear(); globalThis.savedSessions=state.data.sessions; state.data.sessions=[fixture('many',{events:Array.from({length:10},(_,i)=>({at:1792252800,model:'x'+i,input:10+i,cached:0,write:0,output:1,reasoning:0}))})]`);
+run("renderBreakdown(scoped())");
+assert.match(node('breakdown').innerHTML,/Other \(2\)/);
+assert.doesNotMatch(node('breakdown').innerHTML,/breakdown-nested/);
+run("state.expanded.add('model:other'); renderBreakdown(scoped())");
+assert.match(node('breakdown').innerHTML,/breakdown-nested/);
+assert.match(node('breakdown').innerHTML,/>x0</);
+run("state.expanded.clear(); state.data.sessions=savedSessions");
+
+assert.match(run("costCard(scoped())"),/Estimated cost/);
+
 const cache=run("renderCacheSummary(scoped().find(s=>s.session_id==='d2').events)");
 assert.match(cache,/30 \/ 20/);
 assert.match(cache,/0\.0%/);
