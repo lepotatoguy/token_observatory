@@ -6,7 +6,7 @@ All notable changes to Token Observatory. Versions follow [Semantic Versioning](
 
 ### Added
 
-- **Estimated cost** card, priced per model from published API list prices (cache reads, cache writes and output priced separately). Models without a known price are excluded and named in the card's tooltip. OpenAI cache-read rates are partly estimated.
+- **Estimated cost** card, priced per model from published API list prices (cache reads, cache writes and output priced separately). Models without a known price are excluded and named in the card's tooltip. Anthropic prices update automatically from the published pricing page (cached daily, last good prices kept on failure); OpenAI prices are built in and can be overridden in `config.json`.
 - Breakdown rows expand to show fresh input, cache read, cache write, output and cost, and carry separate input and output meters with written totals.
 - Clicking **Other** in the breakdown lists every grouped model or project.
 

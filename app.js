@@ -1,6 +1,6 @@
 'use strict';
 const $ = id => document.getElementById(id);
-const state = {data:null, provider:'all', selected:null, paused:false, refreshing:false, sort:'recent', sortDirection:'desc', day:null, fetching:false, history:'', archive:null, expanded:new Set()};
+const state = {data:null, provider:'all', selected:null, paused:false, refreshing:false, sort:'recent', sortDirection:'desc', day:null, fetching:false, history:'', archive:null, expanded:new Set(), priceInfo:null};
 const nowSeconds = () => state.history && state.data ? state.data.at : Date.now()/1000;
 const fields = ['input','cached','write','output'];
 const colors = ['#8caa77','#aaa0c5','#88a6b5','#d9916b'];
@@ -72,8 +72,9 @@ function stat(label,value,note,icon) {
 }
 function costCard(sessions) {
   const {cost, unpriced, estimated} = costOf(sessions);
+  const info = state.priceInfo, age = info && info.fetched_at ? ` Prices fetched ${relative(info.fetched_at)}.` : '';
   const note = unpriced.length ? `${unpriced.length} unpriced model${unpriced.length===1?'':'s'} excluded` : estimated ? 'List API prices; some cache rates estimated' : 'At list API prices';
-  return `<div class="metric"><span>Estimated cost</span><span class="metric-icon">$</span><strong title="${unpriced.length ? 'Unpriced: '+escapeHTML(unpriced.join(', ')) : 'Input, cache and output at published per-token prices'}">${money(cost)}</strong><small>${note}</small></div>`;
+  return `<div class="metric"><span>Estimated cost</span><span class="metric-icon">$</span><strong title="${unpriced.length ? 'Unpriced: '+escapeHTML(unpriced.join(', ')) : 'Input, cache and output at published per-token prices.'}${escapeHTML(age)}${info&&info.error?' '+escapeHTML(info.error):''}">${money(cost)}</strong><small>${note}</small></div>`;
 }
 function render() {
   if (!state.data) return;
@@ -278,4 +279,12 @@ $('exportButton').addEventListener('click',()=>{
   const rows=scoped().filter(s=>`${s.title} ${s.model} ${s.project} ${s.session_id}`.toLowerCase().includes($('search').value.toLowerCase())).map(s=>[s.provider,s.title,s.session_id,s.model,...[...fields,'reasoning','total'].map(k=>s.usage_source==='unavailable'?'':s.scope[k]),s.last?new Date(s.last*1000).toISOString():'']);
   downloadFile('\ufeff'+[columns,...rows].map(row=>row.map(cell).join(',')).join('\r\n'),'text/csv;charset=utf-8',`token-usage-${new Date().toISOString().slice(0,10)}.csv`);
 });
-refresh();refreshLimits();setInterval(refresh,2000);
+async function loadPrices(){
+  try{
+    const response=await fetch('/api/pricing',{cache:'no-store'});
+    if(!response.ok)return;
+    const prices=await response.json();
+    state.priceInfo=prices;setLivePrices(prices.models);render();
+  }catch{}
+}
+refresh();refreshLimits();loadPrices();setInterval(loadPrices,3600000);setInterval(refresh,2000);

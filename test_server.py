@@ -8,6 +8,7 @@ import urllib.error
 import urllib.request
 from http.server import ThreadingHTTPServer
 
+import pricing
 from server import Handler, Log, Store, timestamp, tokens, total
 
 
@@ -255,11 +256,13 @@ class AccountingTests(unittest.TestCase):
             path.write_text('')
             server=ThreadingHTTPServer(('127.0.0.1',0),Handler)
             server.store=Store(root/'codex',root/'claude',root/'saved')
+            server.pricing=pricing.Pricing(root/'pricing.json',root/'config.json',lambda:'')
             thread=threading.Thread(target=server.serve_forever,daemon=True)
             thread.start()
             base=f'http://127.0.0.1:{server.server_port}'
             try:
                 self.assertEqual(urllib.request.urlopen(base).status,200)
+                self.assertEqual(json.load(urllib.request.urlopen(base+'/api/pricing'))['models'],[])
                 with urllib.request.urlopen(base+'/logo.svg') as response:
                     self.assertEqual(response.headers.get_content_type(),'image/svg+xml')
                     self.assertIn(b'<svg',response.read())

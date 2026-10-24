@@ -188,9 +188,14 @@ const PRICES = [
   [/gpt-6-luna/, [0.1, 0.1, 0.1, 0.005, 0.5], null, true],
 ];
 const LONG_PROMPT = 100000;
+// Prices from /api/pricing (downloaded and cached by the collector) take precedence over the built-in table.
+let livePrices = [];
+function setLivePrices(models) {
+  livePrices = (models || []).flatMap(m => { try { return [[new RegExp(m.match), m.rates, m.long_rates, false, m.custom]]; } catch { return []; } });
+}
 function priceFor(model) {
   const id = String(model || '').toLowerCase();
-  return PRICES.find(p => p[0].test(id));
+  return livePrices.find(p => p[0].test(id)) || PRICES.find(p => p[0].test(id));
 }
 // Cost of one event; Haiku 5.5 switches to its higher rates for prompts over 100k tokens.
 function eventCost(e, model) {
