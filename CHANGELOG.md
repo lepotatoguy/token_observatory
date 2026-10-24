@@ -2,7 +2,7 @@
 
 All notable changes to Token Observatory. Versions follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.2.1] - 2026-10-24
 
 ### Added
 

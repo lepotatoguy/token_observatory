@@ -1,6 +1,6 @@
 # Installing Token Observatory
 
-Token Observatory is a local dashboard for Claude Code and Codex token usage. It reads the session logs those tools already write on your machine. It has no dependencies, needs no API keys, and uploads nothing.
+Token Observatory is a local dashboard for Claude Code and Codex token usage. It reads the session logs those tools already write on your machine. It has no dependencies, needs no API keys, and uploads nothing. Its only network request is an optional download of published model prices ([Cost estimates](#cost-estimates)).
 
 ## Requirements
 
