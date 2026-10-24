@@ -49,7 +49,7 @@ class PricingTests(unittest.TestCase):
             if fail:
                 raise OSError('offline')
             return text
-        return pricing.Pricing(self.dir / 'pricing.json', self.dir / 'config.json', fetch, lambda: self.now)
+        return pricing.Pricing(self.dir / 'pricing.json', self.dir / 'config.json', fetch, lambda: self.now, self.dir / 'prices.json')
 
     def test_updates_once_a_day_and_survives_restart(self):
         p = self.make(PAGE.replace('$4 / MTok', '$4.5 / MTok'))
@@ -75,6 +75,24 @@ class PricingTests(unittest.TestCase):
         p.update()
         self.assertEqual(p.snapshot()['models'], [])
         self.assertIn('not recognised', p.snapshot()['error'])
+
+    def test_bundled_prices_are_the_last_resort(self):
+        (self.dir / 'prices.json').write_text(json.dumps(dict(models=[dict(match='gpt-6-luna', rates=[1, 1, 1, 0.1, 2])])))
+        p = self.make(fail=True)
+        p.update()
+        snap = p.snapshot()
+        self.assertEqual(snap['source'], 'bundled')
+        self.assertEqual(lookup(snap['models'], 'gpt-6-luna')['rates'][4], 2)
+        self.make().update()
+        online = self.make().snapshot()['models']
+        self.assertEqual(lookup(online, 'claude-opus-5-5')['rates'][0], 4)
+        self.assertTrue(lookup(online, 'gpt-6-luna'))
+
+    def test_shipped_prices_file_is_valid(self):
+        models = pricing.load_bundled()
+        self.assertGreaterEqual(len(models), 15)
+        self.assertTrue(all(len(m['rates']) == 5 for m in models))
+        self.assertEqual(lookup(models, 'claude-opus-5-5')['rates'], [4, 5, 8, 0.2, 20])
 
     def test_config_overrides_and_opt_out(self):
         (self.dir / 'config.json').write_text(json.dumps(dict(prices={'gpt-6-luna': dict(input=1, cache_read=0.1, output=2), 'bad': {}}, price_updates=False)))

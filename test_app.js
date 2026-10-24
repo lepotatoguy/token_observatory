@@ -12,6 +12,7 @@ const context = vm.createContext({document:{getElementById:node,querySelectorAll
 vm.runInContext(fs.readFileSync(__dirname+'/app.js','utf8'),context);
 vm.runInContext(fs.readFileSync(__dirname+'/insights.js','utf8'),context);
 const run = source => vm.runInContext(source,context);
+run('setLivePrices('+fs.readFileSync(__dirname+'/prices.json','utf8')+'.models)');
 assert.equal(run('state.sort'),'recent');
 assert.equal(run('state.sortDirection'),'desc');
 run(`function fixture(id, options={}) {
@@ -148,12 +149,13 @@ assert.ok(Math.abs(run("eventCost({input:100001,output:1e6},'claude-haiku-5-5')"
 assert.equal(run("eventCost({input:1,output:1},'mystery-model')"),null);
 run("setLivePrices([{match:'opus-4-7(?![-.]?\\\\d{1,2}(?!\\\\d))',rates:[1,1,1,1,1],long_rates:null}])");
 assert.equal(run("eventCost({input:1e6,output:1e6},'claude-opus-4-7')"),2);
-assert.equal(run("eventCost({input:1e6,output:1e6},'claude-sonnet-5-5')"),12);
-run("setLivePrices([])");
+assert.equal(run("eventCost({input:1e6,output:1e6},'claude-sonnet-5-5')"),null);
+run("setLivePrices("+fs.readFileSync(__dirname+'/prices.json','utf8')+".models)");
 assert.equal(run("breakdownRows(scoped(),'model')[0].output"),10);
 run("state.expanded.clear(); renderBreakdown(scoped())");
 assert.doesNotMatch(node('breakdown').innerHTML,/breakdown-detail/);
-assert.match(node('breakdown').innerHTML,/<b>In<\/b>/);
+assert.match(node('breakdown').innerHTML,/breakdown-meter/);
+assert.doesNotMatch(node('breakdown').innerHTML,/>In </);
 run("state.expanded.add('model:m1'); renderBreakdown(scoped())");
 assert.match(node('breakdown').innerHTML,/Cache write/);
 run(`state.expanded.clear(); globalThis.savedSessions=state.data.sessions; state.data.sessions=[fixture('many',{events:Array.from({length:10},(_,i)=>({at:1792252800,model:'x'+i,input:10+i,cached:0,write:0,output:1,reasoning:0}))})]`);

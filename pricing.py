@@ -1,21 +1,25 @@
 """Keep per-token prices current from Anthropic's published pricing page.
 
 The page is downloaded (nothing is uploaded) at most once a day and the parsed table is cached beside
-config.json. A failed download keeps the last good prices. OpenAI publishes no machine-readable page,
-so those prices come from the dashboard's built-in table or from "prices" in config.json:
+config.json. A failed download keeps the last good prices, and prices.json (shipped with the app) is the
+last-resort fallback. OpenAI publishes no machine-readable page, so those prices come from prices.json or
+from "prices" in config.json:
     {"prices": {"gpt-6-luna": {"input": 0.1, "cache_read": 0.01, "output": 0.5}},
      "price_updates": false}
+Setting TOKEN_OBSERVATORY_PRICE_UPDATES=0 in the environment also stops the download (the tests use it).
 """
 import json
 import os
 from pathlib import Path
 import re
+import sys
 import threading
 import time
 import urllib.request
 
 URL = 'https://platform.claude.com/docs/en/about-claude/pricing.md'
 MAX_AGE = 24 * 3600
+BUNDLED = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent)) / 'prices.json'
 LONG_PROMPT_NOTE = re.compile(r'over 100,000', re.I)
 # Version digits must not continue into another short number: "opus-5" must not match "opus-5-5".
 NOT_FOLLOWED = r'(?![-.]?\d{1,2}(?!\d))'
@@ -66,10 +70,10 @@ def load_overrides(config_path):
     try:
         config = json.loads(Path(config_path).read_text())
     except FileNotFoundError:
-        return [], True, None
+        return [], os.environ.get('TOKEN_OBSERVATORY_PRICE_UPDATES') != '0', None
     except (OSError, ValueError) as error:
         return [], True, f'Config {config_path} is unreadable: {error}'
-    enabled = config.get('price_updates', True) is not False
+    enabled = config.get('price_updates', True) is not False and os.environ.get('TOKEN_OBSERVATORY_PRICE_UPDATES') != '0'
     overrides, invalid = [], []
     prices = config.get('prices', {})
     for model, p in (prices.items() if isinstance(prices, dict) else []):
@@ -88,10 +92,19 @@ def load_overrides(config_path):
     return overrides, enabled, warning
 
 
+def load_bundled(path=BUNDLED):
+    try:
+        models = json.loads(Path(path).read_text())['models']
+        return [m for m in models if isinstance(m, dict) and m.get('match') and m.get('rates')]
+    except (OSError, ValueError, KeyError, TypeError):
+        return []
+
+
 class Pricing:
-    def __init__(self, cache_path, config_path, fetch=fetch_markdown, clock=time.time):
+    def __init__(self, cache_path, config_path, fetch=fetch_markdown, clock=time.time, bundled=BUNDLED):
         self.cache_path, self.config_path, self.fetch, self.clock = Path(cache_path), Path(config_path), fetch, clock
         self.lock = threading.Lock()
+        self.bundled = load_bundled(bundled)
         self.models, self.fetched_at, self.error = [], None, None
         try:
             cached = json.loads(self.cache_path.read_text())
@@ -99,7 +112,7 @@ class Pricing:
         except (OSError, ValueError, KeyError, TypeError):
             pass
 
-    def update(self, force=False):
+    def update(self, force=False, cancelled=lambda: False):
         enabled = load_overrides(self.config_path)[1]
         with self.lock:
             if not enabled or not force and self.fetched_at and self.clock() - self.fetched_at < MAX_AGE:
@@ -112,6 +125,8 @@ class Pricing:
             with self.lock:
                 self.error = f'Price update failed: {error}'
             return
+        if cancelled():
+            return  # the app is shutting down; do not write into its folder
         payload = dict(models=models, fetched_at=self.clock())
         try:
             self.cache_path.parent.mkdir(parents=True, exist_ok=True)
@@ -126,5 +141,6 @@ class Pricing:
     def snapshot(self):
         overrides, enabled, warning = load_overrides(self.config_path)
         with self.lock:
-            return dict(models=overrides + self.models, fetched_at=self.fetched_at, source=URL if self.models else None,
+            # Order is precedence: config overrides, then online prices, then the bundled file.
+            return dict(models=overrides + self.models + self.bundled, fetched_at=self.fetched_at, source=URL if self.models else 'bundled',
                         updates=enabled, error=self.error, warning=warning)

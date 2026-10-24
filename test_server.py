@@ -262,7 +262,9 @@ class AccountingTests(unittest.TestCase):
             base=f'http://127.0.0.1:{server.server_port}'
             try:
                 self.assertEqual(urllib.request.urlopen(base).status,200)
-                self.assertEqual(json.load(urllib.request.urlopen(base+'/api/pricing'))['models'],[])
+                served=json.load(urllib.request.urlopen(base+'/api/pricing'))
+                self.assertEqual(served['source'],'bundled')
+                self.assertEqual(len(served['models']),len(pricing.load_bundled()))
                 with urllib.request.urlopen(base+'/logo.svg') as response:
                     self.assertEqual(response.headers.get_content_type(),'image/svg+xml')
                     self.assertIn(b'<svg',response.read())

@@ -169,33 +169,16 @@ function saveBudget(event) {
   renderBudget();
 }
 
-// Published API prices in USD per million tokens: [input, 5m cache write, 1h cache write, cache read, output].
-// Anthropic: platform.claude.com/docs/en/about-claude/pricing. OpenAI cache-read rates were not published
-// for every model; those marked estimated use the one documented ratio (0.05x input for gpt-6.1-sol).
-const PRICES = [
-  [/(fable|mythos)-5-1/, [10, 12.5, 20, 0.25, 50]],
-  [/(fable|mythos)-5/, [10, 12.5, 20, 1, 50]],
-  [/opus-5-5/, [4, 5, 8, 0.2, 20]],
-  [/opus-(5|4-[5-8])/, [5, 6.25, 10, 0.5, 25]],
-  [/opus-4/, [15, 18.75, 30, 1.5, 75]],
-  [/sonnet-5-5/, [2, 2.5, 4, 0.1, 10]],
-  [/sonnet-5/, [2, 2.5, 4, 0.2, 10]],
-  [/sonnet-4/, [3, 3.75, 6, 0.3, 15]],
-  [/haiku-5-5/, [0.1, 0.125, 0.2, 0.01, 0.5], [0.5, 0.625, 1, 0.05, 2.5]],
-  [/haiku-4-5/, [1, 1.25, 2, 0.1, 5]],
-  [/haiku-3-5/, [0.8, 1, 1.6, 0.08, 4]],
-  [/gpt-6(\.1)?-sol/, [2, 2, 2, 0.1, 10], null, true],
-  [/gpt-6-luna/, [0.1, 0.1, 0.1, 0.005, 0.5], null, true],
-];
+// Prices come from /api/pricing: config overrides, then the daily download of Anthropic's published prices,
+// then the bundled prices.json. Each is [match, [input, 5m write, 1h write, cache read, output], long-prompt rates, estimated].
 const LONG_PROMPT = 100000;
-// Prices from /api/pricing (downloaded and cached by the collector) take precedence over the built-in table.
 let livePrices = [];
 function setLivePrices(models) {
-  livePrices = (models || []).flatMap(m => { try { return [[new RegExp(m.match), m.rates, m.long_rates, false, m.custom]]; } catch { return []; } });
+  livePrices = (models || []).flatMap(m => { try { return [[new RegExp(m.match), m.rates, m.long_rates, !!m.estimated]]; } catch { return []; } });
 }
 function priceFor(model) {
   const id = String(model || '').toLowerCase();
-  return livePrices.find(p => p[0].test(id)) || PRICES.find(p => p[0].test(id));
+  return livePrices.find(p => p[0].test(id));
 }
 // Cost of one event; Haiku 5.5 switches to its higher rates for prompts over 100k tokens.
 function eventCost(e, model) {
@@ -257,16 +240,14 @@ function breakdownDetail(r) {
 }
 function breakdownItem(r, grand, top, key) {
   const open = state.expanded.has(key);
-  const inputShare = percent(r.input, top.input), outputShare = percent(r.output, top.output);
   return `<div class="breakdown-group${open ? ' open' : ''}"><div class="breakdown-item"><button type="button" class="breakdown-name" data-expand="${escapeHTML(key)}" aria-expanded="${open}" title="${open ? 'Hide' : 'Show'} input and output"><i class="chevron">▸</i>${escapeHTML(r.name)}</button>
-    <span class="breakdown-meters"><span class="breakdown-bar input" title="Input ${exact(r.input)}"><span style="width:${inputShare}%"></span></span><span class="breakdown-bar output" title="Output ${exact(r.output)}"><span style="width:${outputShare}%"></span></span></span>
-    <span class="breakdown-io" title="Input incl. cache / output"><b>In</b> ${compact(r.input)} <b>Out</b> ${compact(r.output)}</span>
+    <span class="breakdown-meter" title="Input incl. cache ${exact(r.input)} / output ${exact(r.output)}"><span class="fill" style="width:${percent(r.total, top.total)}%"><i class="in" style="flex:${r.input}"></i><i class="out" style="flex:${Math.max(r.output, r.total * 0.01)}"></i></span></span>
     <strong title="${exact(r.total)}">${compact(r.total)}</strong><span>${percent(r.total, grand).toFixed(1)}%</span><span title="Share of input served from cache">${percent(r.cached, r.input).toFixed(0)}% cached</span></div>${open ? breakdownDetail(r) : ''}</div>`;
 }
 function renderBreakdown(sessions) {
   const by = saved.get('breakdownBy', 'model'), rows = breakdownRows(sessions, by);
   const grand = rows.reduce((n, r) => n + r.total, 0);
-  const top = {input:Math.max(1, ...rows.map(r => r.input)), output:Math.max(1, ...rows.map(r => r.output))};
+  const top = {total:Math.max(1, ...rows.map(r => r.total))};
   const shown = rows.slice(0, BREAKDOWN_ROWS), rest = rows.slice(BREAKDOWN_ROWS);
   const items = shown.map(r => breakdownItem(r, grand, top, `${by}:${r.name}`));
   if (rest.length) {

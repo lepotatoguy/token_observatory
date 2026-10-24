@@ -32,7 +32,7 @@ def main():
         executable = contents / 'MacOS/TokenObservatory'
         resources.mkdir(parents=True)
         executable.parent.mkdir(parents=True)
-        for name in ['server.py', 'archive.py', 'codex_usage.py', 'claude_context.py', 'claude_limits.py', 'claude_statusline.py', 'live_limits.py', 'pricing.py', 'session_hooks.py', 'launcher.py', 'index.html', 'app.js', 'insights.js', 'style.css', 'logo.svg']:
+        for name in ['server.py', 'archive.py', 'codex_usage.py', 'claude_context.py', 'claude_limits.py', 'claude_statusline.py', 'live_limits.py', 'pricing.py', 'prices.json', 'session_hooks.py', 'launcher.py', 'index.html', 'app.js', 'insights.js', 'style.css', 'logo.svg']:
             shutil.copy2(ROOT / name, resources / name)
         shutil.copy2(ROOT / 'launch-app.sh', executable)
         executable.chmod(0o755)

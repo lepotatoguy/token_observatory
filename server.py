@@ -445,7 +445,7 @@ def main():
 
     def update_prices():
         while not stop.is_set():
-            server.pricing.update()
+            server.pricing.update(cancelled=stop.is_set)
             stop.wait(3600)
 
     collector = threading.Thread(target=collect, daemon=True)
