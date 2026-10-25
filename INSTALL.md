@@ -90,7 +90,7 @@ python3 server.py --port 8766 --claude-home /path/to/.claude --codex-home /path/
 
 When you open the dashboard, click **Refresh**, and every 5 minutes, the collector asks both tools for current usage:
 
-- Claude Code: `claude -p /usage`, the documented `/usage` report ([Agent SDK reference](https://code.claude.com/docs/en/agent-sdk/typescript)). It is a local command: no model request, no tokens, and no saved session. It needs a claude.ai Pro or Max sign-in.
+- Claude Code: `claude -p /usage`, the documented `/usage` report ([Agent SDK reference](https://code.claude.com/docs/en/agent-sdk/typescript)). It is a local command: no model request, no tokens, and no saved session. It needs a claude.ai Pro or Max sign-in in Claude Code itself (check with `claude auth status`, sign in with `claude /login`); signing in to the Claude desktop app doesn't count.
 - Codex: `codex app-server` and its `account/rateLimits/read` method ([App Server docs](https://learn.chatgpt.com/docs/app-server)).
 
 Both tools use their own sign-in; Token Observatory never reads credentials. The `claude` and `codex` commands must be on `PATH` or in `/opt/homebrew/bin`, `/usr/local/bin`, `~/.local/bin` or `~/.claude/local`. If a check fails, the card says why and keeps the last good numbers. Results are saved as `live-limits.json` in the data folder.
@@ -177,7 +177,7 @@ If you added the Claude Code status line or the conversation hooks, remove them 
 | Dashboard says a log directory was not found | The tool hasn't been used on this machine, or it uses a custom home. Pass `--claude-home` or `--codex-home`, or set `CLAUDE_CONFIG_DIR` or `CODEX_HOME`. |
 | Browser shows "Collector disconnected" | The collector stopped. Reopen the app or run `token-observatory`, then check `service.log`. |
 | Port 8765 is in use | Another program owns the port. Use `--port` or `TOKEN_OBSERVATORY_PORT`. |
-| A limit shows "Live check failed" | The `claude` or `codex` command wasn't found or isn't signed in. Claude's `/usage` report needs a claude.ai Pro or Max sign-in. |
+| A limit shows "Live check failed" | The `claude` or `codex` command wasn't found or isn't signed in. Claude's `/usage` report needs a claude.ai Pro or Max sign-in. If it says Claude Code is signed out, run `claude /login` in a terminal, then click **Refresh**. |
 | Numbers change only after a reply finishes | Expected. The tools write usage after each response, not while it streams. |
 | A chat is missing | Only sessions kept on local disk are read. Browser chats on claude.ai or chatgpt.com, and remote or cloud sessions, are not included. |
 

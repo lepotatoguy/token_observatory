@@ -2,6 +2,13 @@
 
 All notable changes to Token Observatory. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [1.2.2] - 2026-10-25
+
+### Fixed
+
+- When Claude Code is signed out, the live limit check now says so and tells you to run `claude /login`, instead of only saying it returned no plan usage. Claude Code's `/usage` reports plan usage only while it is signed in to claude.ai; the Claude desktop app has its own sign-in.
+- The macOS app build test now uses the same file list as the build, so a new file can't break the release again.
+
 ## [1.2.1] - 2026-10-24
 
 ### Added

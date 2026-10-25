@@ -79,7 +79,22 @@ def claude_usage(binary, cwd, timeout=TIMEOUT):
     except OSError as error:
         return None, f'claude /usage failed: {error.strerror}'
     result = parse_claude_usage(done.stdout.splitlines(), time.time())
-    return (result, None) if result else (None, 'claude /usage returned no plan usage (it needs a claude.ai Pro or Max sign-in)')
+    if result:
+        return result, None
+    if claude_signed_in(binary, cwd, timeout) is False:
+        return None, 'Claude Code is signed out, so it can\'t report plan usage. Run `claude /login` in a terminal.'
+    return None, 'claude /usage returned no plan usage (it needs a claude.ai Pro or Max sign-in)'
+
+
+def claude_signed_in(binary, cwd, timeout=TIMEOUT):
+    """True or False from `claude auth status`, or None when it can't tell."""
+    try:
+        done = subprocess.run([binary, 'auth', 'status'], cwd=cwd, stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                              timeout=timeout, env=tool_env(binary))
+        status = json.loads(done.stdout)
+    except (subprocess.TimeoutExpired, OSError, ValueError):
+        return None
+    return status.get('loggedIn') if isinstance(status, dict) and isinstance(status.get('loggedIn'), bool) else None
 
 
 def parse_codex_limits(result, now):

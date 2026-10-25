@@ -57,6 +57,20 @@ class ProcessTests(unittest.TestCase):
             self.assertIn('--no-session-persistence', args.read_text())
             self.assertIn('/usage', args.read_text())
 
+    def test_signed_out_claude_says_how_to_sign_in(self):
+        with tempfile.TemporaryDirectory() as folder:
+            script = 'if [ "$1" = auth ]; then echo \'{"loggedIn": false, "authMethod": "none"}\'; else echo \'{"type": "result", "result": "Total cost: $0.0000"}\'; fi\n'
+            result, error = live_limits.claude_usage(fake_tool(folder, 'claude', script), folder)
+            self.assertIsNone(result)
+            self.assertIn('signed out', error)
+            self.assertIn('claude /login', error)
+
+    def test_signed_in_without_report_keeps_plan_message(self):
+        with tempfile.TemporaryDirectory() as folder:
+            script = 'if [ "$1" = auth ]; then echo \'{"loggedIn": true}\'; else echo \'{"type": "result"}\'; fi\n'
+            error = live_limits.claude_usage(fake_tool(folder, 'claude', script), folder)[1]
+            self.assertIn('Pro or Max', error)
+
     def test_codex_app_server_handshake_and_read(self):
         with tempfile.TemporaryDirectory() as folder:
             seen = Path(folder) / 'seen'
