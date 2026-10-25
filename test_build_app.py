@@ -16,7 +16,7 @@ class AppBuildTests(unittest.TestCase):
     def test_repeated_builds_leave_one_app_with_the_logo(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
-            for name in ['server.py', 'archive.py', 'codex_usage.py', 'claude_context.py', 'claude_limits.py', 'claude_statusline.py', 'live_limits.py', 'session_hooks.py', 'launcher.py', 'index.html', 'app.js', 'insights.js', 'style.css', 'logo.svg', 'launch-app.sh']:
+            for name in [*build_app.APP_FILES, 'launch-app.sh']:
                 shutil.copy2(build_app.ROOT / name, root / name)
             legacy = root / 'dist/Token Observatory.app'
             (legacy / 'Contents').mkdir(parents=True)
