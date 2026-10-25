@@ -28,7 +28,7 @@ case "$platform" in
       case "${file##*/}" in test_*|build_app.py) continue ;; esac
       cp "$file" "$app/"
     done
-    cp "$root/index.html" "$root/app.js" "$root/insights.js" "$root/style.css" "$root/logo.svg" "$root/prices.json" "$app/"
+    cp "$root/index.html" "$root/app.js" "$root/insights.js" "$root/updates.js" "$root/style.css" "$root/logo.svg" "$root/prices.json" "$app/"
     cp "$root/scripts/token-observatory" "$bin/token-observatory"
     chmod 755 "$bin/token-observatory"
     cat > "$data/applications/token-observatory.desktop" <<DESKTOP

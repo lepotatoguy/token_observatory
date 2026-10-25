@@ -42,6 +42,7 @@ python3 server.py --port 8766 --codex-home /path/to/.codex --claude-home /path/t
 - Breakdown by model (from each usage event) or project (from the session's working folder), with each group's share of input served from cache.
 - Trends use every retained log for the selected provider, independent of the time range: today vs the average of the previous 7 days, the last 7 days vs the 7 before, the busiest of the last 30 days, and a 28-day weekday-by-hour heatmap.
 - Context pressure: chats active in the last hour whose latest request uses 80% or more of a known window are listed in a banner and flagged in the conversation list. With Alerts on, the browser notifies once per chat at 80% and 95%, and once per day at 80% and 100% of the budget.
+- Updates (`updater.py`, `update_install.py`, `updates.js`): at start (when the last check is over an hour old) and then every 24 hours, a collector thread reads `https://api.github.com/repos/lepotatoguy/token_observatory/releases/latest` (no auth, 10-second timeout). Drafts, pre-releases, tags that aren't plain `x.y.z` and versions not newer than `VERSION` are ignored; failures go to `service.log`. Results are cached in `update-check.json`, and the dashboard's choices (`notify`, `dismissed`) in `update-settings.json`. `notify: false` stops checks. `GET /api/update` returns `current`, `install`, `latest` (version, notes, url), `prompt` and `progress`. `POST /api/update/settings` takes `{"notify": bool}` and/or `{"dismiss": "x.y.z"}`; `POST /api/update/install` starts the update in a thread and the page polls `GET /api/update` until `current` is the new version, then reloads. Both POSTs have the `/api/refresh` Host, Origin and cross-site checks, and also require `Content-Type: application/json` and a body of at most 1 KB. The asset for the install type (`update_install.kind`: `macos-app`, `windows-exe`, `linux-deb`, `source-app`, `source-linux`, `git`, `unknown`) must be listed at `github.com/<repo>/releases/download/<tag>/`; redirects may only go to `github.com`, `objects.githubusercontent.com`, `release-assets.githubusercontent.com` or `codeload.github.com` over HTTPS. Its SHA-256 must match `SHA256SUMS.txt` (and GitHub's `digest` field when present). The collector then restarts with `os.execve` (same PID; history is saved first; launcher-started collectors re-run `--serve`). Windows instead writes a `cmd` helper to the temp folder that waits for both PyInstaller processes to exit, swaps the `.exe` and starts it with `--no-open`. A macOS app swap keeps the old app in a `.token-observatory-update-*` folder beside it until the new collector is serving (`update-state.json`). `TOKEN_OBSERVATORY_UPDATE_CHECKS=0` turns checks off (the tests set it). For testing only, `TOKEN_OBSERVATORY_UPDATE_SERVER=http://127.0.0.1:<port>` sends the API request and downloads to a loopback server instead of GitHub.
 - Cache: the inspector shows the share of input served from cache and, for Claude, cache writes split into 5-minute and 1-hour (`write_1h` on each Claude event, from `usage.cache_creation`).
 
 ## Data folder and JSON history
@@ -52,7 +53,7 @@ python3 server.py --port 8766 --codex-home /path/to/.codex --claude-home /path/t
 | Linux | `$XDG_DATA_HOME/token-observatory` (default `~/.local/share/token-observatory`) |
 | Windows | `%APPDATA%\Token Observatory` |
 
-It holds `history/YYYY-MM-DD.json`, `service.log`, `collector.pid`, the optional `config.json`, and, when used, `claude-rate-limits.json`, `live-limits.json`, `pricing.json` (downloaded prices) and `hook-state.json`.
+It holds `history/YYYY-MM-DD.json`, `service.log`, `collector.pid`, the optional `config.json`, and, when used, `claude-rate-limits.json`, `live-limits.json`, `pricing.json` (downloaded prices), `hook-state.json`, `update-check.json`, `update-settings.json` and an `updates` folder for downloads.
 
 The collector captures changes at most once per minute, including when the browser is closed. It keeps the latest capture for each calendar day in this computer's time zone. Each file contains normalized sessions, usage events, context and quota snapshots, source paths, capture time, and schema version. Prompts and credentials are excluded.
 
@@ -72,7 +73,7 @@ Choose a saved date beside the time-range filter to reopen history; filters then
 
 ## Security
 
-The server binds only to `127.0.0.1`, rejects unrelated Host headers and cross-site browser reads, and serves only its dashboard assets and normalized telemetry. It never uploads data or alters source logs, and it changes Claude Code or Codex settings only when you run an `--install-*` or `--uninstall-*` command. `POST /api/refresh` has the same Host and cross-site checks and also rejects a foreign `Origin`. From Claude Code's `.claude.json` it reads only each project's last session ID, cost, and model IDs. Chat titles, project names, session IDs, and file paths appear in local responses and exports. Don't expose the port through a tunnel.
+The server binds only to `127.0.0.1`, rejects unrelated Host headers and cross-site browser reads, and serves only its dashboard assets and normalized telemetry. It never uploads data or alters source logs, it replaces itself only after you choose **Update now** and the download matches the release checksums, and it changes Claude Code or Codex settings only when you run an `--install-*` or `--uninstall-*` command. `POST /api/refresh`, `POST /api/update/settings` and `POST /api/update/install` have the same Host and cross-site checks and also reject a foreign `Origin`; the update POSTs also require a JSON content type. From Claude Code's `.claude.json` it reads only each project's last session ID, cost, and model IDs. Chat titles, project names, session IDs, and file paths appear in local responses and exports. Don't expose the port through a tunnel.
 
 ## Tests
 
@@ -97,7 +98,7 @@ To release:
 
 1. Bump `VERSION` in `launcher.py` and add an entry to [CHANGELOG.md](CHANGELOG.md).
 2. Optionally run **Release** from the Actions tab to build and smoke-test all three platforms without publishing.
-3. Tag and push: `git tag -a v1.2.3 -m "Token Observatory v1.2.3" && git push origin v1.2.3`. The workflow checks the tag against `VERSION`, builds on macOS (Apple silicon), Ubuntu, and Windows runners, smoke-tests each build, and publishes the release with `SHA256SUMS.txt`.
+3. Tag and push: `git tag -a v1.2.3 -m "Token Observatory v1.2.3" && git push origin v1.2.3`. The workflow checks the tag against `VERSION`, builds on macOS (Apple silicon), Ubuntu, and Windows runners, smoke-tests each build, adds a `git archive` source tarball (`TokenObservatory-<version>-source.tar.gz`, used by source installs to update), and publishes the release with `SHA256SUMS.txt`. The in-app updater looks for these exact asset names, so keep them stable.
 
 `python3 build_app.py` builds the older source-based macOS app in `~/Applications`, which runs `server.py` with the Mac's own Python.
 
@@ -105,16 +106,17 @@ To release:
 
 | Path | Purpose |
 |---|---|
-| `server.py` | Log discovery, parsing, HTTP API (`/api/usage`, `/api/history/<day>`, `/api/health`, `POST /api/refresh`) |
+| `server.py` | Log discovery, parsing, HTTP API (`/api/usage`, `/api/history/<day>`, `/api/health`, `/api/update`, `POST /api/refresh`, `POST /api/update/settings`, `POST /api/update/install`) |
 | `codex_usage.py`, `claude_context.py` | Codex accounting; Claude capacity and cost |
 | `claude_limits.py`, `claude_statusline.py` | Claude usage limits; status line capture and settings install |
 | `pricing.py` | Downloads and parses Anthropic's published prices daily (`GET /api/pricing`), plus `config.json` price overrides |
 | `prices.json` | Bundled fallback prices used when the online prices cannot be fetched |
 | `live_limits.py` | Live limit checks through `claude -p /usage` and `codex app-server` |
 | `session_hooks.py` | Conversation hooks for the 5-hour limit and context, and their install |
+| `updater.py`, `update_install.py` | Update check, prompt settings, verified downloads; per-install replacement and restart |
 | `archive.py` | Daily JSON snapshots and per-platform data folder |
 | `launcher.py` | Start-once launcher, status line and hook modes; entry point of the standalone builds |
-| `index.html`, `app.js`, `insights.js`, `style.css`, `logo.svg` | Dashboard UI (`insights.js`: limits, budget, breakdown, trends, alerts) |
+| `index.html`, `app.js`, `insights.js`, `updates.js`, `style.css`, `logo.svg` | Dashboard UI (`insights.js`: limits, budget, breakdown, trends, alerts; `updates.js`: update prompt) |
 | `packaging/` | PyInstaller spec, icons, `.deb` builder, release notes |
 | `.github/workflows/release.yml` | Release builds |
 | `install.sh`, `uninstall.sh`, `scripts/` | Source install for macOS and Linux |

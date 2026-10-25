@@ -7,6 +7,7 @@ Standalone builds of Token Observatory, a local dashboard for Claude Code and Co
 | macOS (Apple silicon) | `TokenObservatory-<version>-macos-arm64.zip` |
 | Linux (Debian, Ubuntu; x86-64) | `TokenObservatory-<version>-linux-amd64.deb` |
 | Windows (x86-64) | `TokenObservatory-<version>-windows-x64.exe` |
+| Source (used by source installs to update) | `TokenObservatory-<version>-source.tar.gz` |
 
 `SHA256SUMS.txt` lists checksums for every file.
 

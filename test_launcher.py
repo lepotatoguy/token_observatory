@@ -24,7 +24,7 @@ class LauncherTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             port = free_port()
             url = f'http://127.0.0.1:{port}'
-            env = dict(os.environ, HOME=folder, XDG_DATA_HOME=str(Path(folder)/'data'), APPDATA=folder, TOKEN_OBSERVATORY_PRICE_UPDATES='0')
+            env = dict(os.environ, HOME=folder, XDG_DATA_HOME=str(Path(folder)/'data'), APPDATA=folder, TOKEN_OBSERVATORY_PRICE_UPDATES='0', TOKEN_OBSERVATORY_UPDATE_CHECKS='0')
             env.pop('CLAUDE_CONFIG_DIR', None)
             env.pop('CODEX_HOME', None)
 
@@ -52,7 +52,7 @@ class LauncherTests(unittest.TestCase):
 
     def test_statusline_saves_claude_rate_limits(self):
         with tempfile.TemporaryDirectory() as folder:
-            env = dict(os.environ, HOME=folder, XDG_DATA_HOME=str(Path(folder)/'data'), APPDATA=folder, TOKEN_OBSERVATORY_PRICE_UPDATES='0')
+            env = dict(os.environ, HOME=folder, XDG_DATA_HOME=str(Path(folder)/'data'), APPDATA=folder, TOKEN_OBSERVATORY_PRICE_UPDATES='0', TOKEN_OBSERVATORY_UPDATE_CHECKS='0')
             payload = json.dumps(dict(model=dict(display_name='Opus'), context_window=dict(used_percentage=12.4),
                 rate_limits=dict(five_hour=dict(used_percentage=79, resets_at=4102444800), seven_day=dict(used_percentage=55.2, resets_at=4102444800))))
             shown = subprocess.run([sys.executable, str(ROOT/'launcher.py'), '--statusline'], input=payload, env=env,

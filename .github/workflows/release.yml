@@ -105,6 +105,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # The source archive lets source installs (build_app.py, install.sh) update themselves.
+          git archive --format=tar.gz --prefix="token_observatory-${GITHUB_REF_NAME#v}/" -o "assets/TokenObservatory-${GITHUB_REF_NAME#v}-source.tar.gz" HEAD
           (cd assets && sha256sum * > SHA256SUMS.txt)
           # Release notes: this version's CHANGELOG section, then the install guide.
           version="${GITHUB_REF_NAME#v}"

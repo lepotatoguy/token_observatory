@@ -17,6 +17,8 @@ import claude_limits
 import claude_statusline
 import live_limits
 import pricing
+import update_install
+import updater
 
 LIVE_REUSE_SECONDS = 10  # Clicks within this many seconds share one live check.
 LIVE_INTERVAL = 300  # The collector also checks live limits this often, in seconds.
@@ -359,13 +361,52 @@ class Handler(BaseHTTPRequestHandler):
             return False
         return True
 
+    def json_body(self):
+        """The request's JSON object, or None after replying with an error."""
+        if self.headers.get_content_type() != 'application/json':
+            self.send_error(415)
+            return None
+        try:
+            length = int(self.headers.get('Content-Length') or 0)
+        except ValueError:
+            length = -1
+        if length < 0:
+            self.send_error(400, 'Bad Content-Length')
+            return None
+        if length > 1024:
+            self.rfile.read(min(length, 65536))  # Read what was sent so the error reply arrives intact.
+            self.send_error(413)
+            return None
+        try:
+            payload = json.loads(self.rfile.read(length) or b'{}')
+        except ValueError:
+            payload = None
+        if not isinstance(payload, dict):
+            self.send_error(400, 'Expected a JSON object')
+            return None
+        return payload
+
     def do_POST(self):
         if not self.allowed():
             return
-        if urlsplit(self.path).path != '/api/refresh':
+        route = urlsplit(self.path).path
+        updates = getattr(self.server, 'updates', None)
+        if route == '/api/refresh':
+            body = self.server.store.refresh_live()
+        elif route in ('/api/update/settings', '/api/update/install') and updates:
+            # A JSON content type also makes browsers ask first for any cross-site attempt, which is never answered.
+            payload = self.json_body()
+            if payload is None:
+                return
+            try:
+                body = updates.set_preferences(payload) if route.endswith('settings') else updates.start()
+            except ValueError as error:
+                self.send_error(400, str(error))
+                return
+        else:
             self.send_error(404)
             return
-        self.reply(json.dumps(self.server.store.refresh_live(), separators=(',', ':'), allow_nan=False).encode(), 'application/json')
+        self.reply(json.dumps(body, separators=(',', ':'), allow_nan=False).encode(), 'application/json')
 
     def do_GET(self):
         if not self.allowed():
@@ -388,10 +429,13 @@ class Handler(BaseHTTPRequestHandler):
         elif route == '/api/pricing':
             body = json.dumps(self.server.pricing.snapshot(), separators=(',', ':'), allow_nan=False).encode()
             content_type = 'application/json'
+        elif route == '/api/update' and getattr(self.server, 'updates', None):
+            body = json.dumps(self.server.updates.status(), separators=(',', ':'), allow_nan=False).encode()
+            content_type = 'application/json'
         elif route == '/api/usage':
             body = json.dumps(self.server.store.read(), separators=(',', ':'), allow_nan=False).encode()
             content_type = 'application/json'
-        elif route in ('/', '/index.html', '/app.js', '/insights.js', '/style.css', '/logo.svg'):
+        elif route in ('/', '/index.html', '/app.js', '/insights.js', '/updates.js', '/style.css', '/logo.svg'):
             path = HERE / ('index.html' if route == '/' else route[1:])
             body = path.read_bytes()
             content_type = {'.html': 'text/html; charset=utf-8', '.css': 'text/css',
@@ -418,7 +462,7 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
-def main():
+def main(restart_command=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--port', type=int, default=8765)
     parser.add_argument('--codex-home', type=Path, default=Path(os.environ.get('CODEX_HOME', str(Path.home()/'.codex'))))
@@ -432,6 +476,14 @@ def main():
                          args.data_dir.parent / 'claude-rate-limits.json', args.data_dir.parent / 'live-limits.json')
     server.pricing = pricing.Pricing(args.data_dir.parent / 'pricing.json', args.data_dir.parent / 'config.json')
     stop = threading.Event()
+    # Restarting after an update runs this process's command again; launcher.py passes its own.
+    restart_command = restart_command or [sys.executable, str(Path(sys.argv[0]).resolve()), *sys.argv[1:]]
+    data_folder = args.data_dir.parent
+    server.updates = updater.Updates(
+        data_folder, kind=update_install.kind(getattr(sys, 'frozen', False), sys.platform, Path(__file__).resolve().parent, DEFAULT_DATA),
+        root=Path(__file__).resolve().parent, restart_command=restart_command,
+        before_restart=lambda: server.store.read(force_save=True),
+        stop_server=lambda: threading.Thread(target=server.shutdown, daemon=True).start())
 
     def collect():
         while not stop.is_set():
@@ -443,6 +495,12 @@ def main():
             server.store.refresh_live()
             stop.wait(LIVE_INTERVAL)
 
+    def check_updates():
+        server.updates.finish()
+        server.updates.check(max_age=updater.START_INTERVAL)
+        while not stop.wait(3600):
+            server.updates.check()
+
     def update_prices():
         while not stop.is_set():
             server.pricing.update(cancelled=stop.is_set)
@@ -452,6 +510,7 @@ def main():
     collector.start()
     threading.Thread(target=check_live, daemon=True).start()
     threading.Thread(target=update_prices, daemon=True).start()
+    threading.Thread(target=check_updates, daemon=True).start()
     print(f'Token Observatory: http://127.0.0.1:{server.server_port}', flush=True)
     try:
         server.serve_forever()

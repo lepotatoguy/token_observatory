@@ -2,6 +2,13 @@
 
 All notable changes to Token Observatory. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [1.2.3] - 2026-10-25
+
+### Added
+
+- Update check. When the collector starts, and then once a day, it asks GitHub in the background whether a newer release exists. If one does, the dashboard shows the new version and its release notes with **Update now** and **Not now**. **Update now** downloads the release file for your install, checks it against the release's `SHA256SUMS.txt`, installs it and restarts the dashboard. **Not now** skips that version. Untick **Notify me about future updates** to stop the checks and prompts; the link in the footer turns them back on. The setting is kept in the data folder, so it applies in every browser.
+- Releases now include a source archive (`TokenObservatory-<version>-source.tar.gz`, listed in `SHA256SUMS.txt`) that source installs use to update.
+
 ## [1.2.2] - 2026-10-25
 
 ### Fixed

@@ -1,6 +1,6 @@
 # Token Observatory
 
-See how many tokens your Claude Code and Codex chats use, live, in a dashboard on your own computer. It reads the logs those tools already save. Nothing is uploaded and no API key is needed. The only network request is an optional, read-only download of published model prices for the cost estimate (see [INSTALL.md](INSTALL.md#cost-estimates)).
+See how many tokens your Claude Code and Codex chats use, live, in a dashboard on your own computer. It reads the logs those tools already save. Nothing is uploaded and no API key is needed. It makes two kinds of read-only network requests, both optional: published model prices for the cost estimate (see [INSTALL.md](INSTALL.md#cost-estimates)) and a daily check for a new version on GitHub (see [INSTALL.md](INSTALL.md#updates)).
 
 ## Download
 
@@ -41,6 +41,8 @@ The dashboard opens in your browser at <http://127.0.0.1:8765>. The first launch
 - Turn on **Alerts** (top right) for a desktop notification when a chat's context is almost full or you pass your budget.
 
 - Optional **conversation hooks** (see [INSTALL.md](INSTALL.md#conversation-hooks)): near the 5-hour limit, the running Claude Code or Codex chat is asked to stop and write a handoff summary; when its context passes 60%, it is asked to condense and continue.
+
+- **Updates.** When a new version is out, the dashboard asks whether to update. **Update now** downloads it, checks it, installs it and reloads the page; **Not now** skips that version. Untick **Notify me about future updates** to stop asking; the link at the bottom right turns it back on. See [INSTALL.md](INSTALL.md#updates).
 
 Numbers update after each reply finishes, not while it's being written.
 

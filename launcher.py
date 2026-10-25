@@ -18,7 +18,7 @@ import claude_limits
 import claude_statusline
 import session_hooks
 
-VERSION = '1.2.2'  # Release tags must match; the PyInstaller spec reads it from here.
+VERSION = '1.2.3'  # Release tags must match; the PyInstaller spec reads it from here.
 STARTUP_SECONDS = 60  # First launches can wait on OS malware scans; one-file builds also unpack first.
 PID_FILE = DEFAULT_DATA / 'collector.pid'
 LOG_FILE = DEFAULT_DATA / 'service.log'
@@ -67,8 +67,10 @@ def serve(port):
     signal.signal(signal.SIGTERM, stop)
     sys.argv = [sys.argv[0], '--port', str(port)]
     import server
+    # After an update the collector restarts in place with this command.
+    command = [sys.executable] + ([] if getattr(sys, 'frozen', False) else [str(Path(__file__).resolve())])
     try:
-        server.main()
+        server.main(restart_command=command + ['--serve', '--port', str(port)])
     finally:
         if PID_FILE.exists() and PID_FILE.read_text() == str(os.getpid()):
             PID_FILE.unlink()

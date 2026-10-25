@@ -9,6 +9,7 @@ import urllib.request
 from http.server import ThreadingHTTPServer
 
 import pricing
+import updater
 from server import Handler, Log, Store, timestamp, tokens, total
 
 
@@ -244,6 +245,45 @@ class AccountingTests(unittest.TestCase):
                 with self.assertRaises(urllib.error.HTTPError) as error:
                     urllib.request.urlopen(urllib.request.Request(base+'/api/usage',method='POST',data=b''))
                 self.assertEqual(error.exception.code,404)
+            finally:
+                server.shutdown();server.server_close();thread.join()
+
+    def test_update_endpoints_are_protected_and_persist_settings(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)
+            started=[]
+            latest=dict(tag_name='v9.0.0',draft=False,prerelease=False,body='',assets=[],
+                        html_url='https://github.com/lepotatoguy/token_observatory/releases/tag/v9.0.0')
+            server=ThreadingHTTPServer(('127.0.0.1',0),Handler)
+            server.store=Store(root/'codex',root/'claude')
+            server.updates=updater.Updates(root,current='1.2.2',fetch_json=lambda url:latest,kind='macos-app',runner=lambda *a:started.append(a))
+            server.updates.check()
+            thread=threading.Thread(target=server.serve_forever,daemon=True)
+            thread.start()
+            base=f'http://127.0.0.1:{server.server_port}'
+            json_post=lambda route,body,headers={}:urllib.request.Request(base+route,method='POST',data=json.dumps(body).encode(),
+                                                                          headers={'Content-Type':'application/json',**headers})
+            try:
+                status=json.load(urllib.request.urlopen(base+'/api/update'))
+                self.assertEqual((status['current'],status['latest']['version'],status['prompt']),('1.2.2','9.0.0',True))
+                status=json.load(urllib.request.urlopen(json_post('/api/update/settings',dict(dismiss='9.0.0'))))
+                self.assertFalse(status['prompt'])
+                self.assertEqual(json.loads((root/'update-settings.json').read_text())['dismissed'],'9.0.0')
+                status=json.load(urllib.request.urlopen(json_post('/api/update/install',{})))
+                self.assertEqual(status['progress']['state'],'starting')
+                self.assertEqual(len(started),1)
+                rejected=[(json_post('/api/update/install',{},h),403) for h in [{'Host':'evil.example'},{'Sec-Fetch-Site':'cross-site'},{'Origin':'http://evil.example'}]]
+                rejected.append((urllib.request.Request(base+'/api/update/install',method='POST',data=b'{}',headers={'Content-Type':'text/plain'}),415))
+                rejected.append((json_post('/api/update/settings',dict(notify='maybe')),400))
+                rejected.append((urllib.request.Request(base+'/api/update/settings',method='POST',data=b'x'*5000,headers={'Content-Type':'application/json'}),413))
+                for request, code in rejected:
+                    with self.assertRaises(urllib.error.HTTPError) as error:
+                        urllib.request.urlopen(request)
+                    self.assertEqual(error.exception.code,code)
+                self.assertEqual(len(started),1)
+                with self.assertRaises(urllib.error.HTTPError) as error:
+                    urllib.request.urlopen(urllib.request.Request(base+'/api/update',headers={'Host':'evil.example'}))
+                self.assertEqual(error.exception.code,403)
             finally:
                 server.shutdown();server.server_close();thread.join()
 

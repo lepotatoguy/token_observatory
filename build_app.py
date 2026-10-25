@@ -19,7 +19,7 @@ def check_owned(path):
             if plistlib.load(source).get('CFBundleIdentifier') != IDENTIFIER:
                 raise RuntimeError(f'Refusing to overwrite another application: {path}')
 
-APP_FILES = ['server.py', 'archive.py', 'codex_usage.py', 'claude_context.py', 'claude_limits.py', 'claude_statusline.py', 'live_limits.py', 'pricing.py', 'prices.json', 'session_hooks.py', 'launcher.py', 'index.html', 'app.js', 'insights.js', 'style.css', 'logo.svg']  # Copied into the app; tests reuse this list.
+APP_FILES = ['server.py', 'archive.py', 'codex_usage.py', 'claude_context.py', 'claude_limits.py', 'claude_statusline.py', 'live_limits.py', 'pricing.py', 'prices.json', 'session_hooks.py', 'updater.py', 'update_install.py', 'launcher.py', 'index.html', 'app.js', 'insights.js', 'updates.js', 'style.css', 'logo.svg']  # Copied into the app; tests reuse this list.
 
 
 def main():

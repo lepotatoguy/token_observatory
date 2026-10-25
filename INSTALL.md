@@ -1,6 +1,6 @@
 # Installing Token Observatory
 
-Token Observatory is a local dashboard for Claude Code and Codex token usage. It reads the session logs those tools already write on your machine. It has no dependencies, needs no API keys, and uploads nothing. Its only network request is an optional download of published model prices ([Cost estimates](#cost-estimates)).
+Token Observatory is a local dashboard for Claude Code and Codex token usage. It reads the session logs those tools already write on your machine. It has no dependencies, needs no API keys, and uploads nothing. Its only network requests are an optional download of published model prices ([Cost estimates](#cost-estimates)) and a daily check for a new version ([Updates](#updates)).
 
 ## Requirements
 
@@ -152,7 +152,29 @@ Restart the collector afterwards. The dashboard labels these values "configured 
 
 The server listens on `127.0.0.1` only and rejects requests whose `Host` header isn't the loopback address.
 
-## Update
+## Updates
+
+When the collector starts, and then at most once a day, it asks GitHub's public releases API (`api.github.com/repos/lepotatoguy/token_observatory/releases/latest`) whether a newer version exists. Nothing is sent but the request. Drafts, pre-releases and versions that aren't newer are ignored, and a failed check is only noted in `service.log`. The answer is cached as `update-check.json` in the data folder.
+
+If a newer version exists, the dashboard shows it with its release notes:
+
+- **Update now** downloads the file for your install from this project's GitHub release, checks its SHA-256 against `SHA256SUMS.txt` from the same release (any mismatch stops the update and deletes the file), installs it and restarts the collector. The page shows progress and reloads on the new version. History and settings are kept.
+- **Not now** hides the prompt for that version. A link at the bottom right of the dashboard reopens it.
+- **Notify me about future updates** is ticked by default. Untick it to stop update checks and prompts. The choice is saved in `update-settings.json` in the data folder, so it applies in every browser. To turn it back on, click **Update notifications off · Turn on** at the bottom right.
+
+What **Update now** does for each kind of install:
+
+| Install | What happens |
+|---|---|
+| macOS release app | Unzips the new app next to the current one, checks it is Token Observatory at the new version, swaps it in, clears the quarantine flag and starts it. The old app is kept until the new one is running. The folder holding the app (usually `/Applications`) must be writable by you; otherwise the dashboard says where the verified download is. |
+| Windows `.exe` | A running program can't replace itself, so a small helper script waits for Token Observatory to exit, replaces the `.exe` in place (keeping the old one until the swap succeeds) and starts it again. |
+| Linux `.deb` | Installing a package needs root. If `pkexec` is available you are asked for your password and the package is installed with `dpkg -i`. Otherwise the verified package stays in the data folder's `updates` folder and the dashboard shows the command to run (`sudo apt install "<path>"`). |
+| Source install (`install.sh` or `build_app.py`) | Downloads the release's source archive (`TokenObservatory-<version>-source.tar.gz`, also checked against `SHA256SUMS.txt`), unpacks it and runs its installer again: `build_app.py` for the macOS app in `~/Applications`, `install.sh` on Linux. |
+| git checkout | Left alone. The dashboard shows `git -C <folder> pull --ff-only`; restart the collector afterwards (and run `./install.sh` again if you installed with it). |
+
+Downloads are accepted only from `github.com/lepotatoguy/token_observatory/releases/download/...`, following redirects only to GitHub's own download hosts. An update never installs an older or equal version.
+
+To update a source install by hand:
 
 ```sh
 git pull
@@ -178,6 +200,7 @@ If you added the Claude Code status line or the conversation hooks, remove them 
 | Browser shows "Collector disconnected" | The collector stopped. Reopen the app or run `token-observatory`, then check `service.log`. |
 | Port 8765 is in use | Another program owns the port. Use `--port` or `TOKEN_OBSERVATORY_PORT`. |
 | A limit shows "Live check failed" | The `claude` or `codex` command wasn't found or isn't signed in. Claude's `/usage` report needs a claude.ai Pro or Max sign-in. If it says Claude Code is signed out, run `claude /login` in a terminal, then click **Refresh**. |
+| An update stops with "failed the checksum check" | The download didn't match `SHA256SUMS.txt` and was deleted. Try again later, or download the release by hand from GitHub. |
 | Numbers change only after a reply finishes | Expected. The tools write usage after each response, not while it streams. |
 | A chat is missing | Only sessions kept on local disk are read. Browser chats on claude.ai or chatgpt.com, and remote or cloud sessions, are not included. |
 
