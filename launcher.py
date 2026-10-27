@@ -95,7 +95,7 @@ def stop_collector(url):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Token Observatory: local token telemetry for Claude Code and Codex.')
+    parser = argparse.ArgumentParser(description='Token Observatory: local token telemetry for Claude Code, Codex and local LLMs.')
     parser.add_argument('--port', type=int, default=int(os.environ.get('TOKEN_OBSERVATORY_PORT', 8765)))
     parser.add_argument('--no-open', action='store_true', help='start the collector without opening a browser')
     parser.add_argument('--stop', action='store_true', help='stop the background collector')

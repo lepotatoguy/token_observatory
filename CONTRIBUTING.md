@@ -5,9 +5,9 @@ Thanks for helping. Token Observatory stays small on purpose: one Python process
 ## Ground rules
 
 - **Standard library only.** No pip packages and no frontend build step. Python 3.9 is the floor (macOS Command Line Tools ship 3.9).
-- **Read-only and local.** Never write to Claude Code or Codex files. The server listens on `127.0.0.1` only. Don't add network calls.
+- **Read-only and local.** Never write to Claude Code or Codex files except through the opt-in `--install-*` commands. The server and the local LLM pass-throughs listen on `127.0.0.1` only. Don't add network calls beyond the documented optional ones (price list, update check).
 - **No estimates presented as measurements.** If a log doesn't record a value, show it as unreported. Don't infer it from character counts, model names or price lists.
-- **Privacy.** Saved history and exports must exclude prompts, responses and credentials.
+- **Privacy.** Saved history and exports must exclude prompts, responses and credentials. The only prompt text kept is a local LLM chat's title: the first 60 characters of its first message.
 
 ## Layout
 

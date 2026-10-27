@@ -273,5 +273,6 @@ def sessions(path, enabled):
             subagent=False, parent=None, totals=dict(**sums, total=sums['input'] + sums['output']), events=events,
             context=latest['input'] + latest['output'], capacity=None, capacity_source=None, compactions=0,
             rate_limits=None, rate_limits_at=None, reported_cost=None, source=str(path), parse_errors=0,
-            usage_source='local proxy', latest_usage=None, latest_usage_at=latest['at']))
+            usage_source='local proxy', latest_usage={k: latest[k] for k in ('input', 'cached', 'write', 'output', 'reasoning')},
+            latest_usage_at=latest['at']))
     return result

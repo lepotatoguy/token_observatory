@@ -15,7 +15,7 @@ const PROVIDER_ICONS = {claude:'✳', codex:'◈', ollama:'◉', lmstudio:'▣',
 const providerName = p => PROVIDER_NAMES[p] || p;
 const providerIcon = p => PROVIDER_ICONS[p] || '•';
 // Tools the user tracks; snapshots saved before this setting existed only had Claude Code and Codex.
-const enabledProviders = () => state.data?.providers?.enabled || ['claude','codex'];
+const enabledProviders = () => Object.keys(PROVIDER_NAMES).filter(p => (state.data?.providers?.enabled || ['claude','codex']).includes(p));
 const sum = events => Object.fromEntries([...fields,'reasoning','total'].map(k => [k,events.reduce((a,e) => a+(k === 'total' ? eventTotal(e) : e[k] || 0),0)]));
 
 const pad = n => String(n).padStart(2,'0');

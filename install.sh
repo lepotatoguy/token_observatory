@@ -35,7 +35,7 @@ case "$platform" in
 [Desktop Entry]
 Type=Application
 Name=Token Observatory
-Comment=Local token usage dashboard for Claude Code and Codex
+Comment=Local token usage dashboard for Claude Code, Codex and local LLMs
 Exec=$bin/token-observatory
 Icon=$app/logo.svg
 Terminal=false

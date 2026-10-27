@@ -1,4 +1,4 @@
-Standalone builds of Token Observatory, a local dashboard for Claude Code and Codex token usage. Python is bundled, so nothing else needs to be installed. Data stays on your machine.
+Standalone builds of Token Observatory, a local dashboard for Claude Code, Codex and local LLM (Ollama, LM Studio, llama.cpp) token usage. Python is bundled, so nothing else needs to be installed. Data stays on your machine.
 
 ## Downloads
 

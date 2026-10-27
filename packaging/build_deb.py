@@ -14,14 +14,15 @@ Maintainer: Joyanta Mondal <mjoyanta.cs@gmail.com>
 Section: devel
 Priority: optional
 Homepage: https://github.com/lepotatoguy/token_observatory
-Description: Local token usage dashboard for Claude Code and Codex
- Reads the session logs Claude Code and Codex write on this machine and
- serves a loopback-only dashboard of token usage. No uploads or API keys.
+Description: Local token usage dashboard for Claude Code, Codex and local LLMs
+ Reads the session logs Claude Code and Codex write on this machine, counts
+ Ollama, LM Studio and llama.cpp requests through a loopback pass-through,
+ and serves a loopback-only dashboard of token usage. No uploads or API keys.
 """
 DESKTOP = """[Desktop Entry]
 Type=Application
 Name=Token Observatory
-Comment=Local token usage dashboard for Claude Code and Codex
+Comment=Local token usage dashboard for Claude Code, Codex and local LLMs
 Exec=/usr/bin/{name}
 Icon={name}
 Terminal=false

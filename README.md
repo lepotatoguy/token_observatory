@@ -1,6 +1,6 @@
 # Token Observatory
 
-See how many tokens your Claude Code and Codex chats use, live, in a dashboard on your own computer. It reads the logs those tools already save. Nothing is uploaded and no API key is needed. It makes two kinds of read-only network requests, both optional: published model prices for the cost estimate (see [INSTALL.md](INSTALL.md#cost-estimates)) and a daily check for a new version on GitHub (see [INSTALL.md](INSTALL.md#updates)).
+See how many tokens your Claude Code, Codex and local LLM (Ollama, LM Studio, llama.cpp) chats use, live, in a dashboard on your own computer. It reads the logs Claude Code and Codex already save, and counts local LLM requests on a pass-through port. Nothing is uploaded and no API key is needed. It makes two kinds of read-only network requests, both optional: published model prices for the cost estimate (see [INSTALL.md](INSTALL.md#cost-estimates)) and a daily check for a new version on GitHub (see [INSTALL.md](INSTALL.md#updates)).
 
 ## Download
 
@@ -57,15 +57,31 @@ Token Observatory keeps collecting in the background after you close the browser
 
 ## Screenshots
 
-Screenshots use synthetic demo data.
+Screenshots use synthetic demo data (`python3 docs/screenshots/demo.py` serves it).
 
-**Overview:** combined usage, provider and time filters, and token activity.
+**Overview:** totals, provider and time filters for Claude Code, Codex, Ollama, LM Studio and llama.cpp, estimated cost, usage limits and today's budget.
 
-![Dashboard overview with demo token totals, time filters, activity chart, and conversation list](docs/screenshots/overview.jpg)
+![Dashboard overview with demo token totals, provider filters including local LLMs, estimated cost, usage limits and daily budget](docs/screenshots/overview.jpg)
 
-**Conversation details:** context usage, a timeline, and the input, cache, output, and reasoning breakdown.
+**Usage limits and budget:** 5-hour and weekly limits for Claude Code and Codex with reset times and a forecast at your recent pace, today's budget split by tool, and token activity by day.
 
-![Selected conversation showing context capacity, token activity, and detailed usage breakdown](docs/screenshots/conversation-details.jpg)
+![Usage limits with forecasts, today's budget split by provider, and the daily token activity chart](docs/screenshots/limits-budget.jpg)
+
+**Breakdown and trends:** usage by model or project with cache reuse, today against your 7-day average, and when in the week you use tokens.
+
+![Breakdown by model with cache share, trends, weekday-by-hour heatmap, and the conversation list](docs/screenshots/breakdown-trends.jpg)
+
+**Conversation details:** context usage, a timeline, and the input, cache, output and reasoning breakdown.
+
+![Selected Claude Code conversation showing context capacity, token activity and detailed usage breakdown](docs/screenshots/conversation-details.jpg)
+
+**Local LLMs:** Ollama, LM Studio and llama.cpp chats, each named by its first message.
+
+![Ollama conversations filtered, with a selected chat showing its latest request and token breakdown](docs/screenshots/local-llm.jpg)
+
+**Providers:** turn each tool on or off and see how to connect local servers, with live status. The same dialog opens on first run with the tools it found already ticked.
+
+![Providers dialog listing Claude Code, Codex, Ollama, LM Studio and llama.cpp with connection steps and status](docs/screenshots/providers.jpg)
 
 ## Good to know
 

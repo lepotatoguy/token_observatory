@@ -1,6 +1,6 @@
 # Installing Token Observatory
 
-Token Observatory is a local dashboard for Claude Code and Codex token usage. It reads the session logs those tools already write on your machine. It has no dependencies, needs no API keys, and uploads nothing. Its only network requests are an optional download of published model prices ([Cost estimates](#cost-estimates)) and a daily check for a new version ([Updates](#updates)).
+Token Observatory is a local dashboard for Claude Code, Codex and local LLM (Ollama, LM Studio, llama.cpp) token usage. It reads the session logs Claude Code and Codex already write on your machine, and counts local LLM requests sent through its loopback pass-through ports. It has no dependencies, needs no API keys, and uploads nothing. Its only network requests are an optional download of published model prices ([Cost estimates](#cost-estimates)) and a daily check for a new version ([Updates](#updates)).
 
 ## Requirements
 
