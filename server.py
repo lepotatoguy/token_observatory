@@ -16,7 +16,9 @@ import claude_context
 import claude_limits
 import claude_statusline
 import live_limits
+import local_proxy
 import pricing
+import providers
 import update_install
 import updater
 
@@ -253,8 +255,11 @@ def latest_limits(sessions):
 
 class Store:
     def __init__(self, codex, claude, data_dir=None, windows=None, config_warning=None, plan_usage=None, claude_limits_file=None,
-                 live_file=None, live_tools=None, live_check=live_limits.check):
+                 live_file=None, live_tools=None, live_check=live_limits.check, settings=None, local_log=None):
         self.codex, self.claude = codex, claude
+        self.settings = settings or providers.Settings(None)
+        self.local_log = local_log
+        self.detected = providers.detect(claude, codex)
         self.windows = claude_context.DEFAULT_WINDOWS if windows is None else windows
         self.config_warning = config_warning
         self.last_sessions = claude_context.LastSessions(claude)
@@ -287,7 +292,10 @@ class Store:
                             pass
                 except OSError as error:
                     warnings.append(f'Session titles: {error.strerror}')
+            enabled = self.settings.enabled(self.detected)
             for provider, root in [('codex', self.codex/'sessions'), ('claude', self.claude/'projects')]:
+                if provider not in enabled:
+                    continue
                 count = 0
                 if not root.exists():
                     warnings.append(f'{provider}: log directory not found')
@@ -315,9 +323,15 @@ class Store:
                 warnings.append(self.config_warning)
             signature = tuple((s['id'], s['modified'], s['title']) for s in sessions)
             sessions = merge_threads(sessions)
+            if self.local_log and enabled & set(local_proxy.TOOLS):
+                sessions += local_proxy.sessions(self.local_log, enabled)
+                sources.append(dict(provider='local', path=str(self.local_log), files=1 if Path(self.local_log).exists() else 0))
+            limits = {p: v for p, v in self.limits(logs, sessions).items() if p in enabled}
             self.snapshot = dict(at=time.time(), sessions=sessions, sources=sources, warnings=warnings,
-                                 limits=self.limits(logs, sessions), accounting_version=2,
-                                 live_limits=dict(checked_at=self.live.get('checked_at'), errors=self.live.get('errors') or {}))
+                                 limits=limits, accounting_version=2,
+                                 providers=dict(enabled=sorted(enabled), setup_done=self.settings.snapshot()['setup_done']),
+                                 live_limits=dict(checked_at=self.live.get('checked_at'),
+                                                  errors={p: e for p, e in (self.live.get('errors') or {}).items() if p in enabled}))
             if self.archive:
                 self.snapshot['archive'] = self.archive.update(self.snapshot, signature, force=force_save)
                 if self.snapshot['archive']['error']:
@@ -329,7 +343,9 @@ class Store:
         """Ask Claude Code and Codex for current limits, then rescan. Failed checks keep the last good answer."""
         with self.live_lock:
             if time.time() - (self.live.get('checked_at') or 0) >= LIVE_REUSE_SECONDS:
+                enabled = self.settings.enabled(self.detected)
                 tools = self.live_tools or dict(claude=live_limits.find_tool('claude'), codex=live_limits.find_tool('codex'))
+                tools = {name: path for name, path in tools.items() if name in enabled}
                 folder = Path(self.live_file).parent if self.live_file else Path.home()
                 found = self.live_check(tools, str(folder if folder.is_dir() else Path.home()))
                 self.live = dict(found, **{p: found[p] or self.live.get(p) for p in ('claude', 'codex')})
@@ -393,6 +409,18 @@ class Handler(BaseHTTPRequestHandler):
         updates = getattr(self.server, 'updates', None)
         if route == '/api/refresh':
             body = self.server.store.refresh_live()
+        elif route == '/api/providers':
+            payload = self.json_body()
+            if payload is None:
+                return
+            try:
+                self.server.store.settings.update(payload)
+            except ValueError as error:
+                self.send_error(400, str(error))
+                return
+            apply_proxies(self.server)
+            self.server.store.scanned = float('-inf')
+            body = provider_status(self.server)
         elif route in ('/api/update/settings', '/api/update/install') and updates:
             # A JSON content type also makes browsers ask first for any cross-site attempt, which is never answered.
             payload = self.json_body()
@@ -432,10 +460,13 @@ class Handler(BaseHTTPRequestHandler):
         elif route == '/api/update' and getattr(self.server, 'updates', None):
             body = json.dumps(self.server.updates.status(), separators=(',', ':'), allow_nan=False).encode()
             content_type = 'application/json'
+        elif route == '/api/providers':
+            body = json.dumps(provider_status(self.server), separators=(',', ':'), allow_nan=False).encode()
+            content_type = 'application/json'
         elif route == '/api/usage':
             body = json.dumps(self.server.store.read(), separators=(',', ':'), allow_nan=False).encode()
             content_type = 'application/json'
-        elif route in ('/', '/index.html', '/app.js', '/insights.js', '/updates.js', '/style.css', '/logo.svg'):
+        elif route in ('/', '/index.html', '/app.js', '/insights.js', '/updates.js', '/setup.js', '/theme.js', '/style.css', '/logo.svg'):
             path = HERE / ('index.html' if route == '/' else route[1:])
             body = path.read_bytes()
             content_type = {'.html': 'text/html; charset=utf-8', '.css': 'text/css',
@@ -462,6 +493,25 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
+def apply_proxies(server):
+    store = server.store
+    enabled = store.settings.enabled(store.detected)
+    server.proxies.apply({tool: store.settings.ports(tool) for tool in local_proxy.TOOLS if tool in enabled})
+
+
+def provider_status(server):
+    """Everything the setup and provider settings need: choices, what was detected, and proxy health."""
+    store = server.store
+    store.detected = providers.detect(store.claude, store.codex)
+    proxies = server.proxies.status()
+    local = {}
+    for tool in local_proxy.TOOLS:
+        listen, target = store.settings.ports(tool)
+        local[tool] = dict(proxies[tool], listen=listen, target=target, server_up=local_proxy.reachable(target))
+    return dict(settings=store.settings.snapshot(), enabled=sorted(store.settings.enabled(store.detected)),
+                detected=store.detected, names=providers.NAMES, cloud=list(providers.CLOUD), local=local)
+
+
 def main(restart_command=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--port', type=int, default=8765)
@@ -473,7 +523,11 @@ def main(restart_command=None):
     windows, config_warning = claude_context.load_windows(args.data_dir.parent / 'config.json')
     server.store = Store(args.codex_home, args.claude_home, args.data_dir, windows, config_warning,
                          claude_limits.desktop_folder() / 'plan-usage-history.json',
-                         args.data_dir.parent / 'claude-rate-limits.json', args.data_dir.parent / 'live-limits.json')
+                         args.data_dir.parent / 'claude-rate-limits.json', args.data_dir.parent / 'live-limits.json',
+                         settings=providers.Settings(args.data_dir.parent / 'providers.json'),
+                         local_log=args.data_dir.parent / 'local-usage.jsonl')
+    server.proxies = local_proxy.Proxies(local_proxy.Recorder(args.data_dir.parent / 'local-usage.jsonl'))
+    apply_proxies(server)
     server.pricing = pricing.Pricing(args.data_dir.parent / 'pricing.json', args.data_dir.parent / 'config.json')
     stop = threading.Event()
     # Restarting after an update runs this process's command again; launcher.py passes its own.
@@ -491,7 +545,8 @@ def main(restart_command=None):
             stop.wait(2)
 
     def check_live():
-        while not stop.is_set():
+        # TOKEN_OBSERVATORY_LIVE_CHECKS=0 turns off the background checks (the tests use it); Refresh still asks.
+        while not stop.is_set() and os.environ.get('TOKEN_OBSERVATORY_LIVE_CHECKS') != '0':
             server.store.refresh_live()
             stop.wait(LIVE_INTERVAL)
 
@@ -518,6 +573,7 @@ def main(restart_command=None):
         pass
     finally:
         stop.set()
+        server.proxies.stop()
         collector.join()
         server.store.read(force_save=True)
         server.server_close()

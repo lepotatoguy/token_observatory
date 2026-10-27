@@ -26,6 +26,10 @@ python3 server.py --port 8766 --codex-home /path/to/.codex --claude-home /path/t
 - One row per conversation, joining Codex log segments and Claude Code or Codex subagents.
 - Live refresh every two seconds, with incremental reads after initial discovery.
 - Time ranges: today, last 48 hours, last 7 days, last 30 days, and all retained logs.
+- Provider settings (`providers.py`, `providers.json` in the data folder): which of Claude Code, Codex, Ollama, LM Studio and llama.cpp are tracked, with a first-run prompt that preselects what `detect()` finds (log folders, a server answering on the usual port, the command on PATH, or the app folder). Until setup runs, Claude Code and Codex stay on as before. Turned-off tools are not scanned, not asked for live limits, and left out of `/api/usage`.
+- Local LLMs (`local_proxy.py`): a recording pass-through per enabled tool on `127.0.0.1` (default 11435 to 11434 for Ollama, 1235 to 1234 for LM Studio, 8081 to 8080 for llama.cpp). It forwards requests unchanged (except adding `stream_options.include_usage` to streamed OpenAI-style requests that don't set it), streams replies back, and reads Ollama's `prompt_eval_count` / `eval_count` or the OpenAI `usage` object from the reply. Each answered POST with counts appends `{at, tool, model, input, output, endpoint}` to `local-usage.jsonl`, plus `conversation` (a SHA-256 prefix of the model and first user message) and `title` (that message's first 60 characters) for chat requests. Chat apps resend the whole conversation each turn, so the first user message identifies the chat. Replies and the rest of the prompts are never stored. Requests without chat messages are grouped by tool, model and local day.
+- Limit forecast: logged tokens per quota percent in the current window, projected at the pace of the last hour (5-hour) or last day (weekly). Reset alerts remember each window's reset time in the browser and, once it passes for a window at least 50% used, show a note for 30 minutes and send a desktop notification when Alerts are on.
+- Dark theme: every color is a CSS variable with a dark value; `theme.js` applies the saved Auto, Light or Dark choice before the page draws.
 - Provider filters, search, subagent filtering, pause, and CSV/JSON exports of filtered totals. Tokens and Last activity sort in either direction; newest activity is the default.
 - With no row selected, the inspector combines usage from chats matching the current filters and search. Select a row for its details; select it again or choose All conversations to go back.
 - Automatic daily JSON archives and a saved-history selector.
@@ -73,7 +77,7 @@ Choose a saved date beside the time-range filter to reopen history; filters then
 
 ## Security
 
-The server binds only to `127.0.0.1`, rejects unrelated Host headers and cross-site browser reads, and serves only its dashboard assets and normalized telemetry. It never uploads data or alters source logs, it replaces itself only after you choose **Update now** and the download matches the release checksums, and it changes Claude Code or Codex settings only when you run an `--install-*` or `--uninstall-*` command. `POST /api/refresh`, `POST /api/update/settings` and `POST /api/update/install` have the same Host and cross-site checks and also reject a foreign `Origin`; the update POSTs also require a JSON content type. From Claude Code's `.claude.json` it reads only each project's last session ID, cost, and model IDs. Chat titles, project names, session IDs, and file paths appear in local responses and exports. Don't expose the port through a tunnel.
+The server binds only to `127.0.0.1`, rejects unrelated Host headers and cross-site browser reads, and serves only its dashboard assets and normalized telemetry. It never uploads data or alters source logs, it replaces itself only after you choose **Update now** and the download matches the release checksums, and it changes Claude Code or Codex settings only when you run an `--install-*` or `--uninstall-*` command. The local LLM pass-throughs also listen only on `127.0.0.1` and forward the client's `Origin` header unchanged, so the local server's own origin checks still apply. `POST /api/refresh`, `POST /api/providers`, `POST /api/update/settings` and `POST /api/update/install` have the same Host and cross-site checks and also reject a foreign `Origin`; the provider and update POSTs also require a JSON content type. From Claude Code's `.claude.json` it reads only each project's last session ID, cost, and model IDs. Chat titles, project names, session IDs, and file paths appear in local responses and exports. Don't expose the port through a tunnel.
 
 ## Tests
 
@@ -106,17 +110,18 @@ To release:
 
 | Path | Purpose |
 |---|---|
-| `server.py` | Log discovery, parsing, HTTP API (`/api/usage`, `/api/history/<day>`, `/api/health`, `/api/update`, `POST /api/refresh`, `POST /api/update/settings`, `POST /api/update/install`) |
+| `server.py` | Log discovery, parsing, HTTP API (`/api/usage`, `/api/history/<day>`, `/api/health`, `/api/update`, `/api/providers`, `POST /api/refresh`, `POST /api/providers`, `POST /api/update/settings`, `POST /api/update/install`) |
 | `codex_usage.py`, `claude_context.py` | Codex accounting; Claude capacity and cost |
 | `claude_limits.py`, `claude_statusline.py` | Claude usage limits; status line capture and settings install |
 | `pricing.py` | Downloads and parses Anthropic's published prices daily (`GET /api/pricing`), plus `config.json` price overrides |
 | `prices.json` | Bundled fallback prices used when the online prices cannot be fetched |
+| `providers.py`, `local_proxy.py` | Provider choices, detection and first-run state; local LLM pass-through and its usage log |
 | `live_limits.py` | Live limit checks through `claude -p /usage` and `codex app-server` |
 | `session_hooks.py` | Conversation hooks for the 5-hour limit and context, and their install |
 | `updater.py`, `update_install.py` | Update check, prompt settings, verified downloads; per-install replacement and restart |
 | `archive.py` | Daily JSON snapshots and per-platform data folder |
 | `launcher.py` | Start-once launcher, status line and hook modes; entry point of the standalone builds |
-| `index.html`, `app.js`, `insights.js`, `updates.js`, `style.css`, `logo.svg` | Dashboard UI (`insights.js`: limits, budget, breakdown, trends, alerts; `updates.js`: update prompt) |
+| `index.html`, `app.js`, `insights.js`, `updates.js`, `setup.js`, `theme.js`, `style.css`, `logo.svg` | Dashboard UI (`insights.js`: limits, forecast, reset alerts, budget, breakdown, trends, alerts; `updates.js`: update prompt; `setup.js`: providers and first-run setup; `theme.js`: theme choice) |
 | `packaging/` | PyInstaller spec, icons, `.deb` builder, release notes |
 | `.github/workflows/release.yml` | Release builds |
 | `install.sh`, `uninstall.sh`, `scripts/` | Source install for macOS and Linux |

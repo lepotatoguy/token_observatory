@@ -218,6 +218,52 @@ class AccountingTests(unittest.TestCase):
             capture.write_text(json.dumps(dict(captured_at=now, five_hour=dict(used_percentage=12, resets_at=now+3600))))
             self.assertEqual(Store(root/'codex',root/'claude',claude_limits_file=capture,live_file=live).read()['limits']['claude']['source'],'statusline')
 
+    def test_provider_settings_endpoint_turns_tools_on_and_off(self):
+        import local_proxy, providers
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)
+            (root/'claude/projects/p').mkdir(parents=True)
+            (root/'claude/projects/p/chat.jsonl').write_text(json.dumps(dict(type='assistant',sessionId='s',timestamp='2026-10-26T10:00:00Z',
+                message=dict(id='m',model='claude-opus-5-5',usage=dict(input_tokens=5,output_tokens=1))))+'\n')
+            local=root/'local-usage.jsonl'
+            local_proxy.Recorder(local).add('ollama','llama3.2',40,10,'/api/chat',at=time.time())
+            calls=[]
+            server=ThreadingHTTPServer(('127.0.0.1',0),Handler)
+            server.store=Store(root/'codex',root/'claude',settings=providers.Settings(root/'providers.json'),local_log=local,
+                               live_tools=dict(claude='c',codex='x'),live_check=lambda tools,cwd,timeout=30: calls.append(set(tools)) or dict(claude=None,codex=None,errors={},checked_at=time.time()))
+            server.proxies=local_proxy.Proxies(local_proxy.Recorder(local))
+            threading.Thread(target=server.serve_forever,daemon=True).start()
+            base=f'http://127.0.0.1:{server.server_port}'
+            post=lambda body: json.load(urllib.request.urlopen(urllib.request.Request(base+'/api/providers',method='POST',
+                                        data=json.dumps(body).encode(),headers={'Content-Type':'application/json'})))
+            try:
+                status=json.load(urllib.request.urlopen(base+'/api/providers'))
+                self.assertFalse(status['settings']['setup_done'])
+                self.assertEqual(status['enabled'],['claude','codex'])
+                self.assertEqual(status['detected']['claude'],'Claude Code logs found')
+                self.assertEqual({s['provider'] for s in server.store.read()['sessions']},{'claude'})
+                status=post(dict(enabled=dict(claude=False,codex=False,ollama=True),ports=dict(ollama=dict(listen=18435)),setup_done=True))
+                self.assertEqual(status['enabled'],['ollama'])
+                self.assertTrue(status['local']['ollama']['listening'])
+                snapshot=server.store.read()
+                self.assertEqual([s['provider'] for s in snapshot['sessions']],['ollama'])
+                self.assertEqual(snapshot['providers'],dict(enabled=['ollama'],setup_done=True))
+                self.assertEqual(snapshot['limits'],{})
+                server.store.refresh_live()
+                self.assertEqual(calls,[set()])  # Turned-off tools are never asked for limits.
+                for body in [dict(enabled=dict(gemini=True)),dict(ports=dict(ollama=dict(listen=11434,target=11434)))]:
+                    with self.assertRaises(urllib.error.HTTPError) as error:
+                        post(body)
+                    self.assertEqual(error.exception.code,400)
+                with self.assertRaises(urllib.error.HTTPError) as error:
+                    urllib.request.urlopen(urllib.request.Request(base+'/api/providers',method='POST',data=b'{}',
+                                           headers={'Content-Type':'application/json','Origin':'http://evil.example'}))
+                self.assertEqual(error.exception.code,403)
+            finally:
+                server.proxies.stop()
+                server.shutdown()
+                server.server_close()
+
     def test_refresh_endpoint_checks_live_limits_and_saves_them(self):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder)

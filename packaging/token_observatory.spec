@@ -6,7 +6,7 @@ from pathlib import Path
 
 root = Path(SPECPATH).parent
 version = re.search(r"^VERSION = '([^']+)'", (root / 'launcher.py').read_text(), re.M).group(1)
-assets = [(str(root / name), '.') for name in ('index.html', 'app.js', 'insights.js', 'updates.js', 'style.css', 'logo.svg', 'prices.json')]
+assets = [(str(root / name), '.') for name in ('index.html', 'app.js', 'insights.js', 'updates.js', 'setup.js', 'theme.js', 'style.css', 'logo.svg', 'prices.json')]
 icon = {'darwin': 'logo.icns', 'win32': 'logo.ico'}.get(sys.platform)
 icon = str(root / 'packaging' / icon) if icon else None
 

@@ -30,15 +30,18 @@ The dashboard opens in your browser at <http://127.0.0.1:8765>. The first launch
 
 - **Conversations** lists your chats. Click one to see its details; click it again to go back to the combined view.
 - **Tokens** and **Last activity** sort the list. Click again to reverse.
-- Filter by provider (Claude Code or Codex) and time range, or search by name or model.
+- **Providers** (left sidebar) turns tracking on or off for Claude Code, Codex, Ollama, LM Studio and llama.cpp. The first time you open the dashboard it asks which tools you use, with the ones it found already ticked.
+- **Local LLMs** (Ollama, LM Studio, llama.cpp) don't keep token counts of their own, so Token Observatory counts them on a second port: point your apps at it instead of the usual one, and every request passes through unchanged. Ollama: `http://127.0.0.1:11435` (instead of 11434). LM Studio: `http://127.0.0.1:1235/v1` (instead of 1234). llama.cpp: `http://127.0.0.1:8081/v1` (instead of 8080). Each chat appears under its first message (the first 60 characters, like a chat app's chat list); apart from that title, only the time, model and token counts are saved, never your prompts or replies. See [INSTALL.md](INSTALL.md#local-llms).
+- Filter by provider and time range, or search by name or model.
 - **Export CSV** and **Export JSON** save what you're looking at.
 - A saved copy is kept for each day. Pick a date next to the time range to look back.
 - Click any day's bar in **Token activity** to see just that day. Click the date chip to go back.
-- **Usage limits** shows how much of your Claude and Codex 5-hour and weekly quota you've used and when each resets. **Refresh** (top right) asks Claude Code and Codex for the current numbers, and the collector also checks every 5 minutes. Opening or reloading the dashboard checks too.
+- **Usage limits** shows how much of your Claude and Codex 5-hour and weekly quota you've used and when each resets. Under each limit, a forecast says when you'll reach it at your recent pace (the last hour for the 5-hour limit, the last day for the weekly one), or how full it will be when it resets. When a limit you had used at least halfway resets, the card says so, and with **Alerts** on you also get a desktop notification. **Refresh** (top right) asks Claude Code and Codex for the current numbers, and the collector also checks every 5 minutes. Opening or reloading the dashboard checks too.
 - **Today's budget** compares today's tokens with a suggested daily amount that keeps you within your weekly limits. The meter has one part for Claude Code and one for Codex, each sized by that tool's suggested share, with a line per tool underneath. You can also set your own target.
 - **Estimated cost** (top row) prices your tokens at published API list prices, per model. Anthropic's prices are downloaded about once a day; if that fails, the prices bundled in `prices.json` are used. Models with no known price are left out and named in the card's tooltip.
 - **Breakdown** splits usage by model or project. Each row has a meter split into input and output; click a name to see fresh input, cache read, cache write, output and cost, and click **Other** to list the models or projects grouped there. **Trends** compares today with your recent average and shows when you use tokens most.
-- Turn on **Alerts** (top right) for a desktop notification when a chat's context is almost full or you pass your budget.
+- Turn on **Alerts** (top right) for a desktop notification when a chat's context is almost full, you pass your budget, or a usage limit resets.
+- **Theme** (top right) switches between Auto (follows your system), Light and Dark.
 
 - Optional **conversation hooks** (see [INSTALL.md](INSTALL.md#conversation-hooks)): near the 5-hour limit, the running Claude Code or Codex chat is asked to stop and write a handoff summary; when its context passes 60%, it is asked to condense and continue.
 

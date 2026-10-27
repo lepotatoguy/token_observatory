@@ -50,12 +50,73 @@ function resetText(limit) {
   if (left <= 0) return 'reset since this snapshot';
   return limit.resets_estimated ? `resets in ~${countdown(left)} (estimated)` : `resets in ${countdown(left)}`;
 }
-function limitRow(limit) {
+function limitRow(limit, provider) {
   const known = limit.used_percent !== null && limit.used_percent !== undefined;
   const used = Math.min(100, Math.max(0, Number(limit.used_percent) || 0));
   const level = used >= 90 ? ' critical' : used >= 70 ? ' high' : '';
-  return `<div class="limit"><div class="limit-head"><span>${windowLabel(limit.window_minutes)}</span><strong>${known ? `${+Number(limit.used_percent).toFixed(1)}% used · ${+Math.max(0, 100 - limit.used_percent).toFixed(1)}% left` : 'Unreported'}</strong></div><div class="gauge${level}"><span style="width:${used}%"></span></div><small title="${escapeHTML(limit.resets_at ? date(limit.resets_at) : 'Not recorded locally')}">${resetText(limit)}</small></div>`;
+  return `<div class="limit"><div class="limit-head"><span>${windowLabel(limit.window_minutes)}</span><strong>${known ? `${+Number(limit.used_percent).toFixed(1)}% used · ${+Math.max(0, 100 - limit.used_percent).toFixed(1)}% left` : 'Unreported'}</strong></div><div class="gauge${level}"><span style="width:${used}%"></span></div><small title="${escapeHTML(limit.resets_at ? date(limit.resets_at) : 'Not recorded locally')}">${resetText(limit)}</small>${forecastLine(provider, limit)}</div>`;
 }
+// Forecast: logged tokens per quota percent in this window, projected at the recent pace. Claude's quota also
+// counts claude.ai and desktop chats that aren't in these logs, so the forecast says it is an estimate.
+const FORECAST_PACE = {300:3600, 10080:86400};  // Pace window in seconds for the 5-hour and weekly limits.
+function clock(at) {
+  const sameDay = dayKey(at) === dayKey(nowSeconds());
+  return new Date(at*1000).toLocaleString(undefined, sameDay ? {hour:'numeric', minute:'2-digit'} : {weekday:'short', hour:'numeric', minute:'2-digit'});
+}
+function forecast(provider, limit) {
+  const used = Number(limit.used_percent), now = nowSeconds(), pace = FORECAST_PACE[limit.window_minutes];
+  if (!pace || !limit.resets_at || !(used >= 1) || used >= 100 || limit.resets_at <= now) return null;
+  const observed = Math.min(now, state.data.limits?.[provider]?.observed_at || now);
+  const sofar = providerTokens(provider, limit.resets_at - limit.window_minutes*60, observed);
+  if (!sofar) return null;
+  const perPercent = sofar/used;
+  const current = Math.min(100, used + providerTokens(provider, observed, now)/perPercent);
+  const rate = providerTokens(provider, now - pace, now)/pace;
+  if (!rate) return {idle:true, current};
+  const hitAt = now + (100 - current)*perPercent/rate;
+  return hitAt < limit.resets_at ? {hitAt, current} : {atReset:Math.min(100, current + rate*(limit.resets_at - now)/perPercent), current};
+}
+function forecastLine(provider, limit) {
+  const f = forecast(provider, limit);
+  if (!f) return '';
+  const paceLabel = limit.window_minutes === 300 ? 'the last hour' : 'the last day';
+  const text = f.idle ? `No logged use in ${paceLabel}; it stays near ${f.current.toFixed(0)}% for now.`
+    : f.hitAt ? `At the pace of ${paceLabel}, you'll reach it around ${clock(f.hitAt)} (in ${countdown(f.hitAt - nowSeconds())}), before it resets.`
+    : `At the pace of ${paceLabel}, you'll be at about ${f.atReset.toFixed(0)}% when it resets.`;
+  return `<small class="forecast${f.hitAt ? ' warn' : ''}" title="Estimated from tokens in these logs. Usage elsewhere (for example claude.ai chats) also counts toward the limit.">${text}</small>`;
+}
+
+// Reset alerts: remember each window's reset time; once it passes after real use, say so on the page and,
+// with Alerts on, as a desktop notification.
+const RESET_ALERT_MIN = 50;  // Only windows at least this full when last seen.
+const RESET_NOTE_SECONDS = 1800;
+function checkResets() {
+  if (state.history) return;
+  const now = nowSeconds(), watched = saved.get('limitWindows', {}), next = {}, recent = saved.get('recentResets', []);
+  for (const [key, seen] of Object.entries(watched)) {
+    if (seen.resets_at > now) { next[key] = seen; continue; }
+    if (seen.used >= RESET_ALERT_MIN) {
+      const [provider, minutes] = key.split(':'), label = `${providerName(provider)} ${windowLabel(Number(minutes)).toLowerCase()} limit`;
+      recent.push({key:`${key}:${seen.resets_at}`, label, at:seen.resets_at});
+      alertOnce(`reset:${key}:${seen.resets_at}`, `${label} has reset`, `It was ${seen.used.toFixed(0)}% used. You can use it again.`);
+    }
+  }
+  for (const [provider, quota] of Object.entries(state.data.limits || {})) {
+    for (const limit of [quota.primary, quota.secondary]) {
+      if (!limit?.resets_at || limit.resets_at <= now || limit.used_percent === null || limit.used_percent === undefined) continue;
+      const key = `${provider}:${limit.window_minutes}`;
+      next[key] = {resets_at:limit.resets_at, used:Math.max(Number(limit.used_percent), next[key]?.resets_at === limit.resets_at ? next[key].used : 0)};
+    }
+  }
+  saved.set('limitWindows', next);
+  saved.set('recentResets', [...new Map(recent.filter(r => now - r.at < RESET_NOTE_SECONDS).map(r => [r.key, r])).values()]);
+}
+function resetNotes() {
+  checkResets();
+  const recent = saved.get('recentResets', []);
+  return recent.map(r => `<p class="reset-note" role="status">✓ ${escapeHTML(r.label)} reset at ${clock(r.at)}.</p>`).join('');
+}
+
 const LIMIT_NOTES = {
   claude: q => q.source === 'live' ? `Checked with Claude Code's /usage, ${relative(q.observed_at).toLowerCase()}.`
     : q.source === 'statusline' ? `From Claude Code's status line, ${relative(q.observed_at).toLowerCase()}.`
@@ -68,14 +129,14 @@ function liveError(provider) {
 }
 function renderLimits() {
   const limits = state.data.limits || {};
-  const groups = ['claude', 'codex'].filter(p => limits[p]).map(p => `<div class="limit-group"><div class="limit-provider">${providerName(p)}</div>${['primary','secondary'].filter(k => limits[p][k]).map(k => limitRow(limits[p][k])).join('')}<p class="insight-note">${LIMIT_NOTES[p](limits[p])}${liveError(p)}</p></div>`).join('');
-  $('limits').innerHTML = `<div class="insight-title">Usage limits</div>${groups || '<p class="insight-note">No quota data yet. Codex records it with each reply; the Claude desktop app records it as you use Claude.</p>'}`;
+  const groups = ['claude', 'codex'].filter(p => limits[p]).map(p => `<div class="limit-group"><div class="limit-provider">${providerName(p)}</div>${['primary','secondary'].filter(k => limits[p][k]).map(k => limitRow(limits[p][k], p)).join('')}<p class="insight-note">${LIMIT_NOTES[p](limits[p])}${liveError(p)}</p></div>`).join('');
+  $('limits').innerHTML = `<div class="insight-title">Usage limits</div>${resetNotes()}${groups || '<p class="insight-note">No quota data yet. Codex records it with each reply; the Claude desktop app records it as you use Claude.</p>'}`;
 }
 
 // Daily budget: all recorded tokens today, every provider, subagents and cache reads included.
-const PROVIDERS = ['claude', 'codex'];
+const budgetProviders = () => enabledProviders();
 function todayByProvider() {
-  const start = dayStart(dayKey(nowSeconds())), used = {claude:0, codex:0};
+  const start = dayStart(dayKey(nowSeconds())), used = Object.fromEntries(budgetProviders().map(p => [p, 0]));
   for (const s of state.data.sessions) for (const e of s.events) if (e.at !== null && e.at >= start) used[s.provider] = (used[s.provider] || 0) + eventTotal(e);
   return used;
 }
@@ -88,7 +149,7 @@ function providerTokens(provider, from, to) {
 }
 function suggestedBudget() {
   const limits = state.data.limits || {}, parts = [], missing = [];
-  for (const provider of ['claude', 'codex']) {
+  for (const provider of ['claude', 'codex'].filter(p => enabledProviders().includes(p))) {
     const week = limits[provider]?.secondary, observed = limits[provider]?.observed_at;
     const used = week && observed && week.resets_at && week.used_percent >= 1 ? providerTokens(provider, week.resets_at - WEEK, observed) : 0;
     if (!used) { missing.push(provider); continue; }
@@ -106,18 +167,18 @@ function budgetShares(budget, suggested) {
 }
 const budgetLevel = share => share >= 100 ? ' critical' : share >= BUDGET_ALERTS[0] ? ' high' : '';
 function budgetMeter(usedBy, budget, suggested) {
-  const used = PROVIDERS.reduce((n, p) => n + (usedBy[p] || 0), 0), scale = budget || suggested.total, share = percent(used, scale);
+  const used = budgetProviders().reduce((n, p) => n + (usedBy[p] || 0), 0), scale = budget || suggested.total, share = percent(used, scale);
   const shares = suggested.total ? budgetShares(budget, suggested) : {};
-  const zoned = PROVIDERS.filter(p => shares[p]);
+  const zoned = budgetProviders().filter(p => shares[p]);
   const track = zoned.length
     ? `<div class="split-meter">${zoned.map(p => { const part = percent(usedBy[p] || 0, shares[p]); return `<div class="split-zone ${p}${budgetLevel(part)}" style="flex-grow:${shares[p]}"><span style="width:${Math.min(100, part)}%"></span></div>`; }).join('')}</div>`
-    : `<div class="split-meter stacked">${PROVIDERS.map(p => `<span class="${p}" style="width:${Math.min(100, percent(usedBy[p] || 0, scale))}%"></span>`).join('')}</div>`;
+    : `<div class="split-meter stacked">${budgetProviders().map(p => `<span class="${p}" style="width:${Math.min(100, percent(usedBy[p] || 0, scale))}%"></span>`).join('')}</div>`;
   const marker = budget && suggested.total ? `<span class="marker" style="left:${Math.min(100, percent(suggested.total, budget))}%" title="Suggested ${exact(suggested.total)}"></span>` : '';
-  const legend = PROVIDERS.filter(p => shares[p] || usedBy[p]).map(p => {
+  const legend = budgetProviders().filter(p => shares[p] || usedBy[p]).map(p => {
     const detail = shares[p] ? `${compact(usedBy[p] || 0)} of ${compact(shares[p])} · ${percent(usedBy[p] || 0, shares[p]).toFixed(0)}%` : `${compact(usedBy[p])} today · no share`;
     return `<li title="${exact(usedBy[p] || 0)}${shares[p] ? ` of ${exact(Math.round(shares[p]))}` : ''} tokens"><i class="swatch ${p}"></i>${providerName(p)}<strong class="${budgetLevel(shares[p] ? percent(usedBy[p] || 0, shares[p]) : 0).trim()}">${detail}</strong></li>`;
   }).join('');
-  const label = `Today's tokens by provider: ${PROVIDERS.map(p => `${providerName(p)} ${compact(usedBy[p] || 0)}${shares[p] ? ` of ${compact(shares[p])}` : ''}`).join(', ')}`;
+  const label = `Today's tokens by provider: ${budgetProviders().map(p => `${providerName(p)} ${compact(usedBy[p] || 0)}${shares[p] ? ` of ${compact(shares[p])}` : ''}`).join(', ')}`;
   return `<div class="limit-head"><span title="${exact(used)} of ${exact(scale)}">${compact(used)} of ${compact(scale)} ${budget ? 'budget' : 'suggested'}</span><strong class="${budgetLevel(share).trim()}">${share.toFixed(0)}%</strong></div><div class="meter" role="img" aria-label="${escapeHTML(label)}">${track}${marker}</div><ul class="budget-split">${legend}</ul>`;
 }
 function suggestionNote(suggested) {
@@ -129,7 +190,7 @@ function suggestionNote(suggested) {
 function renderBudget() {
   if (state.editingBudget && $('budget').querySelector('form')) return; // Don't wipe the field while typing.
   const budget = saved.get('dailyBudget', null), usedBy = todayByProvider(), suggested = suggestedBudget();
-  const used = PROVIDERS.reduce((n, p) => n + usedBy[p], 0);
+  const used = budgetProviders().reduce((n, p) => n + usedBy[p], 0);
   let body;
   if (state.editingBudget) {
     body = `<form class="budget-form"><label class="sr-only" for="budgetInput">Daily token budget</label><input id="budgetInput" type="number" min="1" step="1" inputmode="numeric" value="${budget || suggested.total || ''}" placeholder="Tokens per day" required><button type="submit" class="button">Save</button>${budget ? '<button type="button" class="quiet" data-budget="clear">Remove</button>' : ''}<button type="button" class="quiet" data-budget="cancel">Cancel</button></form>${suggestionNote(suggested)}`;

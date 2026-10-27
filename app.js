@@ -10,7 +10,12 @@ const compact = n => n >= 1e9 ? `${(n/1e9).toFixed(2)}B` : n >= 1e6 ? `${(n/1e6)
 const escapeHTML = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const date = at => at ? new Date(at*1000).toLocaleString() : 'Timestamp unavailable';
 const eventTotal = e => fields.reduce((sum,k) => sum+(e[k] || 0),0);
-const providerName = p => p === 'codex' ? 'Codex' : 'Claude Code';
+const PROVIDER_NAMES = {claude:'Claude Code', codex:'Codex', ollama:'Ollama', lmstudio:'LM Studio', llamacpp:'llama.cpp'};
+const PROVIDER_ICONS = {claude:'✳', codex:'◈', ollama:'◉', lmstudio:'▣', llamacpp:'◆'};
+const providerName = p => PROVIDER_NAMES[p] || p;
+const providerIcon = p => PROVIDER_ICONS[p] || '•';
+// Tools the user tracks; snapshots saved before this setting existed only had Claude Code and Codex.
+const enabledProviders = () => state.data?.providers?.enabled || ['claude','codex'];
 const sum = events => Object.fromEntries([...fields,'reasoning','total'].map(k => [k,events.reduce((a,e) => a+(k === 'total' ? eventTotal(e) : e[k] || 0),0)]));
 
 const pad = n => String(n).padStart(2,'0');
@@ -76,8 +81,15 @@ function costCard(sessions) {
   const note = unpriced.length ? `${unpriced.length} unpriced model${unpriced.length===1?'':'s'} excluded` : estimated ? 'List API prices; some cache rates estimated' : 'At list API prices';
   return `<div class="metric"><span>Estimated cost</span><span class="metric-icon">$</span><strong title="${unpriced.length ? 'Unpriced: '+escapeHTML(unpriced.join(', ')) : 'Input, cache and output at published per-token prices.'}${escapeHTML(age)}${info&&info.error?' '+escapeHTML(info.error):''}">${money(cost)}</strong><small>${note}</small></div>`;
 }
+function renderProviderFilter() {
+  const shown=['all',...enabledProviders()];
+  if(!shown.includes(state.provider))state.provider='all';
+  const markup=shown.map(p=>`<button data-provider="${p}" class="${p===state.provider?'selected':''}">${p==='all'?'All providers':`${providerIcon(p)} ${escapeHTML(providerName(p))}`}</button>`).join('');
+  if($('providerFilter').innerHTML!==markup)$('providerFilter').innerHTML=markup;
+}
 function render() {
   if (!state.data) return;
+  renderProviderFilter();
   const sessions=scoped(), events=sessions.flatMap(s => s.events), totals=sum(events);
   const cacheInput=totals.input+totals.cached+totals.write;
   const hit=cacheInput ? (100*totals.cached/cacheInput).toFixed(1) : '0.0';
@@ -100,7 +112,7 @@ function render() {
   }
   $('sessionCount').textContent=exact(visible.length);
   if (!visible.some(s => s.id===state.selected)) state.selected=null;
-  $('sessions').innerHTML=visible.length ? visible.map(s => `<tr tabindex="0" data-id="${escapeHTML(s.id)}" class="${s.id===state.selected?'active':''}" aria-selected="${s.id===state.selected}"><td><div class="conversation"><span class="provider-icon ${s.provider}">${s.provider==='claude'?'✳':'◈'}</span><div><div class="conversation-title" title="${escapeHTML(s.title)}">${escapeHTML(s.title)}</div><div class="conversation-sub">${escapeHTML(s.model)}${s.agent_count?` · ${s.agent_count} ${s.agent_count===1?'subagent':'subagents'}`:s.subagent?' · subagent':''}${s.last && Date.now()/1000-s.last<300?' · recent':''}${contextPercent(s)>=CONTEXT_ALERTS[0]?` · <span class="pressure-badge">context ${contextPercent(s).toFixed(0)}%</span>`:''}</div></div></div></td><td class="token-number" title="${exact(s.scope.total)}">${s.usage_source==='unavailable'?'Unreported':compact(s.scope.total)}</td><td class="relative" title="${escapeHTML(date(s.last))}">${relative(s.last)}</td></tr>`).join('') : '<tr><td colspan="3"><div class="empty-state">No chats match these filters.</div></td></tr>';
+  $('sessions').innerHTML=visible.length ? visible.map(s => `<tr tabindex="0" data-id="${escapeHTML(s.id)}" class="${s.id===state.selected?'active':''}" aria-selected="${s.id===state.selected}"><td><div class="conversation"><span class="provider-icon ${s.provider}">${providerIcon(s.provider)}</span><div><div class="conversation-title" title="${escapeHTML(s.title)}">${escapeHTML(s.title)}</div><div class="conversation-sub">${escapeHTML(s.model)}${s.agent_count?` · ${s.agent_count} ${s.agent_count===1?'subagent':'subagents'}`:s.subagent?' · subagent':''}${s.last && Date.now()/1000-s.last<300?' · recent':''}${contextPercent(s)>=CONTEXT_ALERTS[0]?` · <span class="pressure-badge">context ${contextPercent(s).toFixed(0)}%</span>`:''}</div></div></div></td><td class="token-number" title="${exact(s.scope.total)}">${s.usage_source==='unavailable'?'Unreported':compact(s.scope.total)}</td><td class="relative" title="${escapeHTML(date(s.last))}">${relative(s.last)}</td></tr>`).join('') : '<tr><td colspan="3"><div class="empty-state">No chats match these filters.</div></td></tr>';
   $('tableFooter').textContent=`${exact(visible.length)} ${visible.length===1?'chat':'chats'} · ${exact(visible.reduce((n,s)=>n+s.events.length,0))} usage updates · select a row for details`;
   renderInspector(visible.find(s => s.id===state.selected),visible);
   $('updated').textContent=`${state.history?'Snapshot captured':'Last scan'} ${date(state.data.at)}`;
@@ -137,7 +149,7 @@ function renderChart(events, target='chart') {
   const width=target==='chart'?1000:440,height=165,left=49,right=10,top=12,bottom=25;
   const plotHeight=height-top-bottom, step=(width-left-right)/count;
   let svg=`<svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="${escapeHTML('Token consumption, '+date(start)+' to '+date(end))}">`;
-  for(let i=0;i<4;i++){const y=top+plotHeight*i/3;svg+=`<line x1="${left}" y1="${y}" x2="${width-right}" y2="${y}" stroke="#edf0e7" stroke-dasharray="3 4"/><text x="0" y="${y+3}">${compact(max*(1-i/3))}</text>`;}
+  for(let i=0;i<4;i++){const y=top+plotHeight*i/3;svg+=`<line x1="${left}" y1="${y}" x2="${width-right}" y2="${y}" style="stroke:var(--track)" stroke-dasharray="3 4"/><text x="0" y="${y+3}">${compact(max*(1-i/3))}</text>`;}
   buckets.forEach((b,i)=>{const x=left+i*step+2,ih=b.input/max*plotHeight,oh=b.output/max*plotHeight;const from=b.day?dayStart(b.day):start+span*i/count;const clickable=b.day && target==='chart';svg+=`<g${clickable?` data-day="${b.day}" class="bar-link" role="button" tabindex="0" aria-label="${escapeHTML('Show '+dayLabel(b.day))}"`:''}><title>${escapeHTML(b.day?dayLabel(b.day)+' · click to view this day':date(from))}\nInput: ${exact(b.input)}\nOutput: ${exact(b.output)}</title><rect x="${x}" y="${top+plotHeight-ih}" width="${Math.max(1,step-4)}" height="${ih}" rx="1" fill="#b0c49e"/><rect x="${x}" y="${top+plotHeight-ih-oh}" width="${Math.max(1,step-4)}" height="${oh}" rx="1" fill="#d9916b"/></g>`;});
   for(let i=0;i<5;i++){const at=start+span*i/4;const text=new Date(at*1000).toLocaleDateString(undefined,{month:'short',day:'numeric'});svg+=`<text x="${left+(width-left-right)*i/4}" y="${height-3}" text-anchor="${i===0?'start':i===4?'end':'middle'}">${escapeHTML(span<172800?new Date(at*1000).toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'}):text)}</text>`;}
   $(target).innerHTML=svg+'</svg>';
@@ -208,7 +220,7 @@ async function refreshLimits() {
   } finally {state.refreshing=false;$('refreshButton').disabled=!!state.history;$('refreshButton').textContent='Refresh';}
 }
 $('refreshButton').addEventListener('click',refreshLimits);
-document.querySelectorAll('[data-provider]').forEach(button=>button.addEventListener('click',()=>{state.provider=button.dataset.provider;document.querySelectorAll('[data-provider]').forEach(b=>b.classList.toggle('selected',b===button));render();}));
+$('providerFilter').addEventListener('click',event=>{const button=event.target.closest?.('[data-provider]');if(!button)return;state.provider=button.dataset.provider;render();});
 $('range').addEventListener('change',()=>{state.day=null;render();});
 $('agents').addEventListener('change',render);
 function showDay(day){state.day=day;state.selected=null;render();}

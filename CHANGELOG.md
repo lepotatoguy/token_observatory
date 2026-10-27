@@ -2,6 +2,16 @@
 
 All notable changes to Token Observatory. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [1.3.0] - 2026-10-26
+
+### Added
+
+- Local LLMs: Ollama, LM Studio and llama.cpp. Token Observatory counts their tokens on a second port that passes every request through unchanged (Ollama `11435`, LM Studio `1235`, llama.cpp `8081`); each chat is named by the first 60 characters of its first message, and otherwise only the time, model and token counts are saved.
+- **Providers** settings to turn tracking on or off for each tool, and a first-run prompt that asks which tools you use, ticks the ones it finds, and shows how to connect local servers with their live status.
+- Dark theme, following your system setting by default, with a **Theme** button to pick Auto, Light or Dark.
+- Limit forecast under each usage limit: when you'll reach it at your recent pace, or how full it will be when it resets.
+- Reset alerts: when a limit you had used at least halfway resets, the card says so, and with **Alerts** on you get a desktop notification.
+
 ## [1.2.3] - 2026-10-25
 
 ### Added

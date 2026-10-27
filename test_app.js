@@ -12,6 +12,7 @@ const context = vm.createContext({document:{getElementById:node,querySelectorAll
 vm.runInContext(fs.readFileSync(__dirname+'/app.js','utf8'),context);
 vm.runInContext(fs.readFileSync(__dirname+'/insights.js','utf8'),context);
 vm.runInContext(fs.readFileSync(__dirname+'/updates.js','utf8'),context);
+vm.runInContext(fs.readFileSync(__dirname+'/setup.js','utf8'),context);
 const run = source => vm.runInContext(source,context);
 run('setLivePrices('+fs.readFileSync(__dirname+'/prices.json','utf8')+'.models)');
 assert.equal(run('state.sort'),'recent');
@@ -225,6 +226,46 @@ run(`state.data.limits={claude:{observed_at:state.data.at,source:'live',primary:
 assert.match(node('limits').innerHTML,/Checked with Claude Code's \/usage/);
 assert.match(node('limits').innerHTML,/Live check failed: claude command not found/);
 assert.match(node('limits').innerHTML,/Codex plus quota from the Codex app server/);
+// Providers: the filter lists only enabled tools, and local sessions get their own names and icons.
+run(`state.history=''; state.provider='lmstudio'; state.data.providers={enabled:['claude','ollama'],setup_done:true};`);
+run('renderProviderFilter()');
+assert.match(node('providerFilter').innerHTML,/All providers[\s\S]*Claude Code[\s\S]*◉ Ollama/);
+assert.doesNotMatch(node('providerFilter').innerHTML,/Codex|LM Studio/);
+assert.equal(run('state.provider'),'all');
+assert.equal(run("providerName('llamacpp')+providerIcon('lmstudio')"),'llama.cpp▣');
+assert.deepEqual(JSON.parse(run('JSON.stringify(Object.keys(todayByProvider()))')),['claude','ollama']);
+run('delete state.data.providers');
+assert.deepEqual(JSON.parse(run('JSON.stringify(enabledProviders())')),['claude','codex']);
+
+// First run preselects what was detected and saves every choice with setup_done.
+run(`providerSetup.firstRun=true; providerSetup.status={names:{claude:'Claude Code',codex:'Codex',ollama:'Ollama'},cloud:['claude','codex'],
+  enabled:['claude','codex'],detected:{claude:'Claude Code logs found',codex:null,ollama:'server answering on port 11434'},
+  local:{ollama:{listening:false,error:null,listen:11435,target:11434,server_up:true}},settings:{setup_done:false}};`);
+run('renderProviders()');
+assert.match(node('providerList').innerHTML,/data-enable="claude" checked[\s\S]*data-enable="codex">[\s\S]*data-enable="ollama" checked/);
+assert.match(node('providerList').innerHTML,/Ollama is answering on port 11434[\s\S]*127\.0\.0\.1:11435/);
+assert.equal(node('providersTitle').textContent,'Welcome to Token Observatory');
+
+// Forecast: 100k tokens made 20% of the 5-hour window, and the last hour ran at 50k/hour, so 100% comes in 8 hours,
+// after the reset in 2 hours: about 40% at reset. A faster pace reaches the limit first.
+run(`state.history=''; Date.now=()=>1792990000000; state.data.providers={enabled:['claude'],setup_done:true};
+  const now=1792990000, start=now-3*3600;
+  const ev=(at,input)=>({at,input,cached:0,write:0,output:0,reasoning:0});
+  state.data.sessions=[{...fixture('f',{provider:'claude',conversation_id:'f'}),events:[ev(start+600,50000),ev(now-1800,50000)]}];
+  state.data.limits={claude:{observed_at:now,primary:{used_percent:20,window_minutes:300,resets_at:now+7200}}};`);
+assert.match(run("forecastLine('claude',state.data.limits.claude.primary)"),/about 40% when it resets/);
+run("state.data.limits.claude.observed_at=now-1200; state.data.sessions[0].events.push(ev(now-600,150000))");
+assert.match(run("forecastLine('claude',state.data.limits.claude.primary)"),/reach it around .* before it resets/);
+assert.equal(run("forecastLine('claude',{used_percent:20,window_minutes:300,resets_at:null})"),'');
+
+// Reset alerts: a window seen at 80% whose reset time has passed shows a note once, even with notifications off.
+run(`localStorage=undefined; saved.set('limitWindows',{}); saved.set('recentResets',[]); checkResets();
+  state.data.limits={claude:{observed_at:now,primary:{used_percent:80,window_minutes:300,resets_at:now+60}}}; checkResets();
+  Date.now=()=>(now+120)*1000; state.data.limits={};`);
+assert.match(run('resetNotes()'),/Claude Code 5-hour limit reset at/);
+run(`saved.set('limitWindows',{'claude:300':{resets_at:now+60,used:10}}); saved.set('recentResets',[]);`);
+assert.equal(run('resetNotes()'),'');
+
 console.log('Frontend grouping, combined usage, selection, sorting, filters, context details, and charts passed.');
 
 // Update prompt: shown only for a newer release, "Not now" and the checkbox persist on the server.

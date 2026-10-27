@@ -86,6 +86,18 @@ Example:
 python3 server.py --port 8766 --claude-home /path/to/.claude --codex-home /path/to/.codex
 ```
 
+### Local LLMs
+
+Ollama, LM Studio and llama.cpp don't save how many tokens each request used, so Token Observatory runs a small pass-through on its own port for each one you turn on under **Providers**. Point your apps at that port instead of the server's usual one. Requests and replies pass through unchanged. Token Observatory saves the time, model, endpoint and token counts to `local-usage.jsonl` in the data folder, plus, for chats, the first 60 characters of the chat's first message, which names the chat in the dashboard. Nothing else from your prompts or replies is saved.
+
+| Tool | Usual port | Use this instead |
+|---|---|---|
+| Ollama | `11434` | `http://127.0.0.1:11435` (for the `ollama` command: `OLLAMA_HOST=127.0.0.1:11435 ollama run <model>`) |
+| LM Studio | `1234` | `http://127.0.0.1:1235/v1` |
+| llama.cpp (`llama-server`) | `8080` | `http://127.0.0.1:8081/v1` |
+
+You can change both ports in **Providers**. Requests that still go straight to the usual port are not counted. For streamed OpenAI-style requests, the pass-through adds `stream_options: {"include_usage": true}` when the app didn't set it, so the server reports token counts at the end of the stream. The pass-through listens on `127.0.0.1` only and runs while the collector runs.
+
 ### Live usage limits
 
 When you open the dashboard, click **Refresh**, and every 5 minutes, the collector asks both tools for current usage:
@@ -199,6 +211,7 @@ If you added the Claude Code status line or the conversation hooks, remove them 
 | Dashboard says a log directory was not found | The tool hasn't been used on this machine, or it uses a custom home. Pass `--claude-home` or `--codex-home`, or set `CLAUDE_CONFIG_DIR` or `CODEX_HOME`. |
 | Browser shows "Collector disconnected" | The collector stopped. Reopen the app or run `token-observatory`, then check `service.log`. |
 | Port 8765 is in use | Another program owns the port. Use `--port` or `TOKEN_OBSERVATORY_PORT`. |
+| A local LLM shows no usage | Check that your app uses the Token Observatory port (see [Local LLMs](#local-llms)) and that **Providers** says the pass-through is counting and the server is answering. |
 | A limit shows "Live check failed" | The `claude` or `codex` command wasn't found or isn't signed in. Claude's `/usage` report needs a claude.ai Pro or Max sign-in. If it says Claude Code is signed out, run `claude /login` in a terminal, then click **Refresh**. |
 | An update stops with "failed the checksum check" | The download didn't match `SHA256SUMS.txt` and was deleted. Try again later, or download the release by hand from GitHub. |
 | Numbers change only after a reply finishes | Expected. The tools write usage after each response, not while it streams. |

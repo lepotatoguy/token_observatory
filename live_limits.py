@@ -166,13 +166,14 @@ def codex_limits(binary, timeout=TIMEOUT):
 
 
 def check(tools, cwd, timeout=TIMEOUT):
-    """Ask both tools at once. Returns {'claude', 'codex', 'errors', 'checked_at'}."""
+    """Ask the tools named in `tools` at once. Returns {'claude', 'codex', 'errors', 'checked_at'}."""
     answers = {}
     jobs = dict(claude=lambda: claude_usage(tools.get('claude'), cwd, timeout), codex=lambda: codex_limits(tools.get('codex'), timeout))
+    jobs = {name: job for name, job in jobs.items() if name in tools}  # Turned-off providers are not asked.
     threads = [threading.Thread(target=lambda name=name, job=job: answers.__setitem__(name, job())) for name, job in jobs.items()]
     for thread in threads:
         thread.start()
     for thread in threads:
         thread.join()
     errors = {name: answers[name][1] for name in jobs if answers[name][1]}
-    return dict(claude=answers['claude'][0], codex=answers['codex'][0], errors=errors, checked_at=time.time())
+    return dict(claude=answers.get('claude', (None,))[0], codex=answers.get('codex', (None,))[0], errors=errors, checked_at=time.time())
