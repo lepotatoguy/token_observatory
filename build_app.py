@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import tempfile
 import zipfile
+from launcher import VERSION
 
 ROOT = Path(__file__).resolve().parent
 IDENTIFIER = 'local.tokenobservatory.dashboard'
@@ -19,7 +20,7 @@ def check_owned(path):
             if plistlib.load(source).get('CFBundleIdentifier') != IDENTIFIER:
                 raise RuntimeError(f'Refusing to overwrite another application: {path}')
 
-APP_FILES = ['server.py', 'archive.py', 'codex_usage.py', 'claude_context.py', 'claude_limits.py', 'claude_statusline.py', 'live_limits.py', 'pricing.py', 'prices.json', 'session_hooks.py', 'updater.py', 'update_install.py', 'local_proxy.py', 'providers.py', 'launcher.py', 'index.html', 'app.js', 'insights.js', 'updates.js', 'setup.js', 'theme.js', 'style.css', 'logo.svg']  # Copied into the app; tests reuse this list.
+APP_FILES = ['server.py', 'archive.py', 'codex_usage.py', 'claude_context.py', 'claude_limits.py', 'claude_statusline.py', 'live_limits.py', 'pricing.py', 'prices.json', 'session_hooks.py', 'updater.py', 'update_install.py', 'local_proxy.py', 'lmstudio_chats.py', 'providers.py', 'launcher.py', 'index.html', 'app.js', 'insights.js', 'updates.js', 'setup.js', 'theme.js', 'style.css', 'logo.svg']  # Copied into the app; tests reuse this list.
 
 
 def main():
@@ -53,7 +54,7 @@ def main():
         info = dict(CFBundleIdentifier=IDENTIFIER, CFBundleName='Token Observatory',
                     CFBundleDisplayName='Token Observatory', CFBundleExecutable='TokenObservatory',
                     CFBundlePackageType='APPL', CFBundleInfoDictionaryVersion='6.0',
-                    CFBundleShortVersionString='1.2', CFBundleVersion='3',
+                    CFBundleShortVersionString=VERSION, CFBundleVersion=VERSION,
                     CFBundleIconFile='AppIcon.icns', LSUIElement=True)
         with (contents / 'Info.plist').open('wb') as output:
             plistlib.dump(info, output)

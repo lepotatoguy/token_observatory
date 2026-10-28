@@ -3,7 +3,7 @@
 const providerSetup = {status:null, firstRun:false, shown:false, saving:false};
 const LOCAL_HELP = {
   ollama: (listen, target) => `<ol><li>Start Ollama as usual (it listens on port ${target}).</li><li>Point your apps at <code>http://127.0.0.1:${listen}</code> instead of port ${target}: in Open WebUI, Continue, Cline and similar, set the Ollama URL to it.</li><li>For the <code>ollama</code> command, run it as <code>OLLAMA_HOST=127.0.0.1:${listen} ollama run llama3.2</code>.</li></ol>`,
-  lmstudio: (listen, target) => `<ol><li>In LM Studio, open the Developer tab and start the server (port ${target}).</li><li>In your apps, use the OpenAI-compatible base URL <code>http://127.0.0.1:${listen}/v1</code> instead of port ${target}.</li></ol>`,
+  lmstudio: (listen, target) => `<p>Chats made inside LM Studio are imported automatically from saved chat files. No server or counting-port setup is needed for those chats.</p><ol><li>For requests from other apps, start LM Studio's Developer server (port ${target}).</li><li>In those apps, use <code>http://127.0.0.1:${listen}/v1</code> instead of port ${target}.</li></ol>`,
   llamacpp: (listen, target) => `<ol><li>Start <code>llama-server -m your-model.gguf --port ${target}</code>.</li><li>In your apps, use the base URL <code>http://127.0.0.1:${listen}/v1</code> instead of port ${target}.</li></ol>`,
 };
 
@@ -18,7 +18,8 @@ function localStatus(tool, info) {
   if (info.error) return `<span class="provider-state bad">${escapeHTML(info.error)}</span>`;
   const proxy = info.listening ? `Counting on port ${info.listen}` : 'Starts when you save';
   const server = info.server_up ? `${escapeHTML(providerName(tool))} is answering on port ${info.target}` : `${escapeHTML(providerName(tool))} isn't running on port ${info.target} right now`;
-  return `<span class="provider-state ${info.server_up ? 'good' : ''}">${proxy} · ${server}</span>`;
+  const chats = tool==='lmstudio' && typeof info.chat_files==='number' ? ` · ${info.chat_files} saved chat ${info.chat_files===1?'file':'files'} detected` : '';
+  return `<span class="provider-state ${info.server_up ? 'good' : ''}">${proxy} · ${server}${chats}</span>`;
 }
 
 function providerRow(name, status) {

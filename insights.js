@@ -404,6 +404,7 @@ async function toggleAlerts() {
 
 // Cache details for the inspector: reuse rate, and the 5-minute versus 1-hour split when Claude records it.
 function renderCacheSummary(events) {
+  if(events.some(e=>e.cache_unreported))return '<div class="breakdown-heading">Cache</div><div class="detail-facts"><div><span>Cache breakdown</span><strong>Unreported for some requests</strong></div></div>';
   const usage = sum(events), input = usage.input + usage.cached + usage.write;
   if (!input) return '';
   const hour = events.reduce((n, e) => n + (e.write_1h || 0), 0);

@@ -93,11 +93,12 @@ function render() {
   const sessions=scoped(), events=sessions.flatMap(s => s.events), totals=sum(events);
   const cacheInput=totals.input+totals.cached+totals.write;
   const hit=cacheInput ? (100*totals.cached/cacheInput).toFixed(1) : '0.0';
+  const cacheMissing=events.some(e=>e.cache_unreported);
   const missing=sessions.filter(s=>s.usage_source==='unavailable').length;
   $('metrics').innerHTML=stat('Recorded tokens',totals.total,`${exact(sessions.length)} chats · ${missing} unreported`,'◈')+
     stat('Input tokens',cacheInput,'Fresh input + cache reads + writes','↗')+
     stat('Output tokens',totals.output,`${exact(totals.reasoning)} recorded reasoning tokens included`,'↙')+
-    `<div class="metric"><span>Cache read share</span><span class="metric-icon">◴</span><strong>${hit}<span style="font-size:17px">%</span></strong><small title="${exact(totals.cached)} cached tokens">${compact(totals.cached)} input tokens served from cache</small></div>`+costCard(sessions);
+    `<div class="metric"><span>Cache read share</span><span class="metric-icon">◴</span>${cacheMissing?'<strong style="font-size:22px">Unreported</strong>':`<strong>${hit}<span style="font-size:17px">%</span></strong>`}<small>${cacheMissing?'Some chats do not record cache breakdown.':`${compact(totals.cached)} input tokens served from cache`}</small></div>`+costCard(sessions);
   renderChart(events);
   renderInsights(sessions);
   $('dayFilter').hidden=!state.day;
@@ -162,11 +163,12 @@ const capacityNote = s => s.capacity_source==='configured' ? 'Not in the log. Se
 function renderContextDetails(s) {
   if(!s.latest_usage)return '<p class="context-note">No per-response detail in this capture.</p>';
   const usage=s.latest_usage;
-  return `<div class="context-categories">${[...fields,'reasoning'].map((k,i)=>`<span>${k==='reasoning'?'Reasoning (in output)':labels[i]}<b>${exact(usage[k])}</b></span>`).join('')}<span>Free space<b>${s.capacity && s.context!==null?exact(Math.max(0,s.capacity-s.context)):'Unreported'}</b></span></div><p class="context-note">Latest request: ${escapeHTML(date(s.latest_usage_at))}. ${providerName(s.provider)} logs omit system, tool, memory, and skill token attribution.</p>`;
+  return `<div class="context-categories">${[...fields,'reasoning'].map((k,i)=>`<span>${k==='reasoning'?'Reasoning (in output)':k==='input' && s.cache_unreported?'Input (incl. cache)':labels[i]}<b>${s.cache_unreported && ['cached','write'].includes(k)?'Unreported':exact(usage[k])}</b></span>`).join('')}<span>Free space<b>${s.capacity && s.context!==null?exact(Math.max(0,s.capacity-s.context)):'Unreported'}</b></span></div><p class="context-note">Latest request: ${escapeHTML(date(s.latest_usage_at))}. ${providerName(s.provider)} logs omit system, tool, memory, and skill token attribution.</p>`;
 }
 function renderUsageBreakdown(usage, unavailable, events=[]) {
+  const cacheMissing=events.some(e=>e.cache_unreported), allCacheMissing=!!events.length && events.every(e=>e.cache_unreported);
   const bar=fields.map((k,i)=>`<span style="width:${usage.total?usage[k]/usage.total*100:0}%;background:${colors[i]}"></span>`).join('');
-  const rows=fields.map((k,i)=>`<div class="breakdown-row"><span><i class="swatch" style="background:${colors[i]}"></i>${labels[i]}</span><strong>${unavailable?'Unreported':exact(usage[k])}</strong></div>`).join('');
+  const rows=fields.map((k,i)=>`<div class="breakdown-row"><span><i class="swatch" style="background:${colors[i]}"></i>${cacheMissing?(k==='input'?'Input (cache split incomplete)':`${labels[i]} (recorded)`):labels[i]}</span><strong>${unavailable || allCacheMissing && ['cached','write'].includes(k)?'Unreported':exact(usage[k])}</strong></div>`).join('');
   return `<div class="breakdown-heading">Token breakdown <span>${unavailable?'Unreported':exact(usage.total)} recorded</span></div><div class="usage-bar">${bar}</div>${rows}<div class="breakdown-row"><span>↳ Reasoning, included in output</span><strong>${unavailable?'Unreported':exact(usage.reasoning)}</strong></div>${renderCacheSummary(events)}`;
 }
 function renderCombinedInspector(sessions) {
@@ -288,7 +290,7 @@ $('exportButton').addEventListener('click',()=>{
   const columns=['provider','title','session_id','model','input','cached','write','output','reasoning','total','last_activity'];
   // Spreadsheet apps can treat text beginning with these characters as formulas.
   const cell=value=>{let s=String(value??'');if(/^[=+@\-\t\r\n]/.test(s))s="'"+s;return '"'+s.replace(/"/g,'""')+'"';};
-  const rows=scoped().filter(s=>`${s.title} ${s.model} ${s.project} ${s.session_id}`.toLowerCase().includes($('search').value.toLowerCase())).map(s=>[s.provider,s.title,s.session_id,s.model,...[...fields,'reasoning','total'].map(k=>s.usage_source==='unavailable'?'':s.scope[k]),s.last?new Date(s.last*1000).toISOString():'']);
+  const rows=scoped().filter(s=>`${s.title} ${s.model} ${s.project} ${s.session_id}`.toLowerCase().includes($('search').value.toLowerCase())).map(s=>[s.provider,s.title,s.session_id,s.model,...[...fields,'reasoning','total'].map(k=>s.usage_source==='unavailable' || s.cache_unreported && ['cached','write'].includes(k)?'':s.scope[k]),s.last?new Date(s.last*1000).toISOString():'']);
   downloadFile('\ufeff'+[columns,...rows].map(row=>row.map(cell).join(',')).join('\r\n'),'text/csv;charset=utf-8',`token-usage-${new Date().toISOString().slice(0,10)}.csv`);
 });
 async function loadPrices(){

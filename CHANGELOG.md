@@ -2,6 +2,14 @@
 
 All notable changes to Token Observatory. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [1.3.1] - 2026-10-28
+
+### Fixed
+
+- Import recorded token usage from LM Studio desktop chats automatically; API requests can still use the counting port.
+- Trigger JSON auto-save when local usage changes, even without Claude Code or Codex activity.
+- Show unavailable LM Studio cache statistics as Unreported instead of zero.
+
 ## [1.3.0] - 2026-10-26
 
 ### Added

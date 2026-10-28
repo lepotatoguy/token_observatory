@@ -67,6 +67,8 @@ Choose a saved date beside the time-range filter to reopen history; filters then
 
 ## Accounting
 
+LM Studio desktop chats (`lmstudio_chats.py`) are read from saved `.conversation.json` files. Usage sums `genInfo.stats.promptTokensCount` and `predictedTokensCount`, including retained response versions. Repeated step IDs count once per chat. Context capacity comes from the saved load configuration. Token counts are not inferred from message text or the chat-level `tokenCount`. Response times use the recorded millisecond prefix in recognized step IDs; unknown formats remain undated and appear only in All retained logs. The reader caches unchanged files and retains the last valid capture during partial writes. LM Studio can change this internal file format; missing statistics remain unreported.
+
 **Codex.** Input includes cached tokens, so fresh input is separated from cache reads and writes before summing. Reasoning is already included in output. Responses are deduplicated by response ID across log segments. The first session metadata identifies the executing thread; inherited parent metadata can't overwrite it. Records belonging to other threads are excluded. Legacy segments without response records use cumulative token-count deltas, joined across segments before subtraction. Legacy counters that overlap modern records are excluded. Quota-only token-count events add nothing.
 
 **Claude Code.** Response blocks sharing a response ID are deduplicated, keeping the largest value for each token field. Nonempty `cost-state.modelUsage` is a fallback when no response usage exists; those totals have no per-request timestamps and appear only in the all-logs range. Cost is shown only when Claude Code reports it with a known model cost. It is not a subscription bill. Subagent logs (`<session>/subagents/agent-*.jsonl`, used heavily by the desktop Code tab) carry the parent chat's session ID, so their tokens count toward that chat. They often keep only the streaming-start usage snapshot, so subagent output counts can be low.
@@ -115,6 +117,7 @@ To release:
 | `claude_limits.py`, `claude_statusline.py` | Claude usage limits; status line capture and settings install |
 | `pricing.py` | Downloads and parses Anthropic's published prices daily (`GET /api/pricing`), plus `config.json` price overrides |
 | `prices.json` | Bundled fallback prices used when the online prices cannot be fetched |
+| `lmstudio_chats.py` | Read-only LM Studio desktop chat usage |
 | `providers.py`, `local_proxy.py` | Provider choices, detection and first-run state; local LLM pass-through and its usage log |
 | `live_limits.py` | Live limit checks through `claude -p /usage` and `codex app-server` |
 | `session_hooks.py` | Conversation hooks for the 5-hour limit and context, and their install |

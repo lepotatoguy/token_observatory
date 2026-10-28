@@ -35,7 +35,10 @@ class AppBuildTests(unittest.TestCase):
                 build_app.main()
             self.assertEqual(list(root.rglob('*.app')), [destination])
             with (destination / 'Contents/Info.plist').open('rb') as source:
-                self.assertEqual(plistlib.load(source)['CFBundleIconFile'], 'AppIcon.icns')
+                info = plistlib.load(source)
+                self.assertEqual(info['CFBundleIconFile'], 'AppIcon.icns')
+                self.assertEqual(info['CFBundleShortVersionString'], build_app.VERSION)
+                self.assertEqual(info['CFBundleVersion'], build_app.VERSION)
             icon = destination / 'Contents/Resources/AppIcon.icns'
             self.assertTrue(icon.read_bytes().startswith(b'icns'))
             with zipfile.ZipFile(root / 'dist/Token Observatory.zip') as archive:

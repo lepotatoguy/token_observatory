@@ -322,3 +322,24 @@ console.log('Frontend grouping, combined usage, selection, sorting, filters, con
   assert.equal(reloaded,true);
   console.log('Update prompt, dismissal, notification setting, and update progress passed.');
 })().catch(error=>{console.error(error);process.exitCode=1;});
+
+// Native LM Studio provides total prompt tokens, not a cache split.
+run(`const lmNative={...root,provider:'lmstudio',cache_unreported:true,
+  latest_usage:{input:20,cached:0,write:0,output:8,reasoning:3},
+  events:[{at:1792252800,model:'local-test',input:20,cached:0,write:0,output:8,reasoning:3,cache_unreported:true}],
+  totals:{input:20,cached:0,write:0,output:8,reasoning:3,total:28}};`);
+assert.match(run('renderContextDetails(lmNative)'),/Input \(incl\. cache\)/);
+assert.match(run('renderContextDetails(lmNative)'),/Cache read<b>Unreported/);
+assert.match(run('renderUsageBreakdown(lmNative.totals,false,lmNative.events)'),/Cache read \(recorded\)<\/span><strong>Unreported/);
+assert.match(run('renderCacheSummary(lmNative.events)'),/Unreported for some requests/);
+assert.doesNotMatch(run('renderCacheSummary(lmNative.events)'),/0\.0%/);
+assert.match(run("LOCAL_HELP.lmstudio(1235,1234)"),/imported automatically/);
+assert.match(run("localStatus('lmstudio',{listening:true,server_up:true,listen:1235,target:1234,chat_files:2})"),/2 saved chat files detected/);
+node('search').value=''; node('range').value='all';
+run("state.provider='all';state.data.sessions=[lmNative];render()");
+assert.match(node('metrics').innerHTML,/Some chats do not record cache breakdown/);
+run("let capturedCSV='';downloadFile=(text)=>{capturedCSV=text;}");
+node('exportButton').listeners.click();
+assert.equal(run("capturedCSV.split('\\r\\n')[1].split(',')[5]"),'""');
+assert.equal(run("capturedCSV.split('\\r\\n')[1].split(',')[6]"),'""');
+console.log('LM Studio native usage, missing cache fields, provider help, and CSV checks passed.');

@@ -88,7 +88,9 @@ python3 server.py --port 8766 --claude-home /path/to/.claude --codex-home /path/
 
 ### Local LLMs
 
-Ollama, LM Studio and llama.cpp don't save how many tokens each request used, so Token Observatory runs a small pass-through on its own port for each one you turn on under **Providers**. Point your apps at that port instead of the server's usual one. Requests and replies pass through unchanged. Token Observatory saves the time, model, endpoint and token counts to `local-usage.jsonl` in the data folder, plus, for chats, the first 60 characters of the chat's first message, which names the chat in the dashboard. Nothing else from your prompts or replies is saved.
+LM Studio desktop chats are read automatically from `~/.lmstudio/conversations/` when LM Studio is enabled under **Providers**. The collector reads recorded prompt and generated-token statistics without changing chat files. The Developer server does not need to run for desktop chats.
+
+For API requests from other apps, Token Observatory runs a small pass-through on its own port for each enabled local tool. Point your apps at that port instead of the server's usual one. Requests and replies pass through unchanged. Token Observatory saves the time, model, endpoint and token counts to `local-usage.jsonl` in the data folder, plus, for chats, the first 60 characters of the chat's first message, which names the chat in the dashboard. Nothing else from your prompts or replies is saved.
 
 | Tool | Usual port | Use this instead |
 |---|---|---|

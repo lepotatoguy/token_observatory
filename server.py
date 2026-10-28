@@ -17,6 +17,7 @@ import claude_limits
 import claude_statusline
 import live_limits
 import local_proxy
+import lmstudio_chats
 import pricing
 import providers
 import update_install
@@ -255,10 +256,11 @@ def latest_limits(sessions):
 
 class Store:
     def __init__(self, codex, claude, data_dir=None, windows=None, config_warning=None, plan_usage=None, claude_limits_file=None,
-                 live_file=None, live_tools=None, live_check=live_limits.check, settings=None, local_log=None):
+                 live_file=None, live_tools=None, live_check=live_limits.check, settings=None, local_log=None, lmstudio_folder=None):
         self.codex, self.claude = codex, claude
         self.settings = settings or providers.Settings(None)
         self.local_log = local_log
+        self.lmstudio = lmstudio_chats.Chats(lmstudio_folder)
         self.detected = providers.detect(claude, codex)
         self.windows = claude_context.DEFAULT_WINDOWS if windows is None else windows
         self.config_warning = config_warning
@@ -323,9 +325,16 @@ class Store:
                 warnings.append(self.config_warning)
             signature = tuple((s['id'], s['modified'], s['title']) for s in sessions)
             sessions = merge_threads(sessions)
+            local_sessions = []
             if self.local_log and enabled & set(local_proxy.TOOLS):
-                sessions += local_proxy.sessions(self.local_log, enabled)
+                local_sessions += local_proxy.sessions(self.local_log, enabled)
                 sources.append(dict(provider='local', path=str(self.local_log), files=1 if Path(self.local_log).exists() else 0))
+            if 'lmstudio' in enabled:
+                local_sessions += self.lmstudio.read()
+                warnings.extend(self.lmstudio.warnings)
+                sources.append(dict(provider='lmstudio', path=str(self.lmstudio.folder), files=self.lmstudio.files))
+            sessions += local_sessions
+            signature += tuple((s['id'], s['modified'], s['title'], s['totals']['total'], len(s['events'])) for s in local_sessions)
             limits = {p: v for p, v in self.limits(logs, sessions).items() if p in enabled}
             self.snapshot = dict(at=time.time(), sessions=sessions, sources=sources, warnings=warnings,
                                  limits=limits, accounting_version=2,
@@ -508,6 +517,8 @@ def provider_status(server):
     for tool in local_proxy.TOOLS:
         listen, target = store.settings.ports(tool)
         local[tool] = dict(proxies[tool], listen=listen, target=target, server_up=local_proxy.reachable(target))
+        if tool == 'lmstudio':
+            local[tool]['chat_files'] = store.lmstudio.files
     return dict(settings=store.settings.snapshot(), enabled=sorted(store.settings.enabled(store.detected)),
                 detected=store.detected, names=providers.NAMES, cloud=list(providers.CLOUD), local=local)
 

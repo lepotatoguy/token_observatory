@@ -1,6 +1,6 @@
 # Token Observatory
 
-See how many tokens your Claude Code, Codex and local LLM (Ollama, LM Studio, llama.cpp) chats use, live, in a dashboard on your own computer. It reads the logs Claude Code and Codex already save, and counts local LLM requests on a pass-through port. Nothing is uploaded and no API key is needed. It makes two kinds of read-only network requests, both optional: published model prices for the cost estimate (see [INSTALL.md](INSTALL.md#cost-estimates)) and a daily check for a new version on GitHub (see [INSTALL.md](INSTALL.md#updates)).
+See how many tokens your Claude Code, Codex and local LLM (Ollama, LM Studio, llama.cpp) chats use, live, in a dashboard on your own computer. It reads the logs Claude Code and Codex already save, reads saved LM Studio desktop chats, and counts local API requests on a pass-through port. Nothing is uploaded and no API key is needed. It makes two kinds of read-only network requests, both optional: published model prices for the cost estimate (see [INSTALL.md](INSTALL.md#cost-estimates)) and a daily check for a new version on GitHub (see [INSTALL.md](INSTALL.md#updates)).
 
 ## Download
 
@@ -31,7 +31,7 @@ The dashboard opens in your browser at <http://127.0.0.1:8765>. The first launch
 - **Conversations** lists your chats. Click one to see its details; click it again to go back to the combined view.
 - **Tokens** and **Last activity** sort the list. Click again to reverse.
 - **Providers** (left sidebar) turns tracking on or off for Claude Code, Codex, Ollama, LM Studio and llama.cpp. The first time you open the dashboard it asks which tools you use, with the ones it found already ticked.
-- **Local LLMs** (Ollama, LM Studio, llama.cpp) don't keep token counts of their own, so Token Observatory counts them on a second port: point your apps at it instead of the usual one, and every request passes through unchanged. Ollama: `http://127.0.0.1:11435` (instead of 11434). LM Studio: `http://127.0.0.1:1235/v1` (instead of 1234). llama.cpp: `http://127.0.0.1:8081/v1` (instead of 8080). Each chat appears under its first message (the first 60 characters, like a chat app's chat list); apart from that title, only the time, model and token counts are saved, never your prompts or replies. See [INSTALL.md](INSTALL.md#local-llms).
+- **Local LLMs:** chats made inside LM Studio are read automatically from its saved chat files. For API requests from other apps, point them at the counting port: Ollama `http://127.0.0.1:11435`, LM Studio `http://127.0.0.1:1235/v1`, or llama.cpp `http://127.0.0.1:8081/v1`. See [Local LLMs](INSTALL.md#local-llms).
 - Filter by provider and time range, or search by name or model.
 - **Export CSV** and **Export JSON** save what you're looking at.
 - A saved copy is kept for each day. Pick a date next to the time range to look back.
