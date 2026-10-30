@@ -18,7 +18,7 @@ import claude_limits
 import claude_statusline
 import session_hooks
 
-VERSION = '1.3.1'  # Release tags must match; the PyInstaller spec reads it from here.
+VERSION = '1.4.0'  # Release tags must match; the PyInstaller spec reads it from here.
 STARTUP_SECONDS = 60  # First launches can wait on OS malware scans; one-file builds also unpack first.
 PID_FILE = DEFAULT_DATA / 'collector.pid'
 LOG_FILE = DEFAULT_DATA / 'service.log'

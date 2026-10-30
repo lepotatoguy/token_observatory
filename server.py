@@ -16,6 +16,8 @@ import claude_context
 import claude_limits
 import claude_statusline
 import live_limits
+import limit_control
+import session_hooks
 import local_proxy
 import lmstudio_chats
 import pricing
@@ -259,6 +261,7 @@ class Store:
                  live_file=None, live_tools=None, live_check=live_limits.check, settings=None, local_log=None, lmstudio_folder=None):
         self.codex, self.claude = codex, claude
         self.settings = settings or providers.Settings(None)
+        self.limit_control = limit_control.Control(Path(data_dir).parent if data_dir is not None else None)
         self.local_log = local_log
         self.lmstudio = lmstudio_chats.Chats(lmstudio_folder)
         self.detected = providers.detect(claude, codex)
@@ -345,6 +348,7 @@ class Store:
                 self.snapshot['archive'] = self.archive.update(self.snapshot, signature, force=force_save)
                 if self.snapshot['archive']['error']:
                     warnings.append(self.snapshot['archive']['error'])
+            self.snapshot['limit_control'] = self.limit_control.observe({p: {r['id']: r for r in session_hooks.limit_rows(q)} for p, q in limits.items()})
             self.scanned = time.monotonic()
             return self.snapshot
 
@@ -418,6 +422,17 @@ class Handler(BaseHTTPRequestHandler):
         updates = getattr(self.server, 'updates', None)
         if route == '/api/refresh':
             body = self.server.store.refresh_live()
+        elif route == '/api/limit-control':
+            payload = self.json_body()
+            if payload is None:
+                return
+            try:
+                self.server.store.limit_control.update(payload)
+            except ValueError as error:
+                self.send_error(400, str(error))
+                return
+            self.server.store.scanned = float('-inf')
+            body = self.server.store.limit_control.snapshot()
         elif route == '/api/providers':
             payload = self.json_body()
             if payload is None:
@@ -471,6 +486,9 @@ class Handler(BaseHTTPRequestHandler):
             content_type = 'application/json'
         elif route == '/api/providers':
             body = json.dumps(provider_status(self.server), separators=(',', ':'), allow_nan=False).encode()
+            content_type = 'application/json'
+        elif route == '/api/limit-control':
+            body = json.dumps(self.server.store.limit_control.snapshot(), separators=(',', ':'), allow_nan=False).encode()
             content_type = 'application/json'
         elif route == '/api/usage':
             body = json.dumps(self.server.store.read(), separators=(',', ':'), allow_nan=False).encode()

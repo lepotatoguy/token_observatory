@@ -43,7 +43,8 @@ The dashboard opens in your browser at <http://127.0.0.1:8765>. The first launch
 - Turn on **Alerts** (top right) for a desktop notification when a chat's context is almost full, you pass your budget, or a usage limit resets.
 - **Theme** (top right) switches between Auto (follows your system), Light and Dark.
 
-- Optional **conversation hooks** (see [INSTALL.md](INSTALL.md#conversation-hooks)): near the 5-hour limit, the running Claude Code or Codex chat is asked to stop and write a handoff summary; when its context passes 60%, it is asked to condense and continue.
+- Optional **conversation hooks** (see [INSTALL.md](INSTALL.md#conversation-hooks)): near a reported usage limit, the running Claude Code or Codex chat is asked to pause for that window and save a handoff; same-chat resumption is supported after reset; when its context passes 60%, it is asked to condense and continue.
+- **Limit controls**: per-provider warn or hard-limit mode, adjustable thresholds, reset notifications, and a metadata-only 30-day event history capped at 1,000 events / 256 KiB. Pauses clear automatically at reset; an idle chat still needs its host to run it.
 
 - **Updates.** When a new version is out, the dashboard asks whether to update. **Update now** downloads it, checks it, installs it and reloads the page; **Not now** skips that version. Untick **Notify me about future updates** to stop asking; the link at the bottom right turns it back on. See [INSTALL.md](INSTALL.md#updates).
 

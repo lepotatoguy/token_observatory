@@ -128,10 +128,20 @@ The newest of the live check, the status line and the Claude desktop app's occas
 
 ### Conversation hooks
 
+Open **Limit controls** in the sidebar to choose **Warn only** or **Hard limit (pause)** and a threshold from 1 to 100%, separately for Claude Code and Codex. Existing installations keep hard mode and their configured threshold (90% by default). Warn mode never requests a usage pause or mandatory handoff. These controls require the hooks below; they do not block requests at the provider.
+
+Pauses clear automatically at reset. Already-authorized work can continue at the next chat execution opportunity without another resume approval. Hooks cannot wake an idle chat, so it may still need a message. A new conversation is optional.
+
+Enable **Notify when a usage window resets** and **Alerts on** for desktop notifications while the dashboard is open. Watched reset times persist across collector restarts and page reloads.
+
+The dialog also shows 30 days of event history, capped at 1,000 events and 256 KiB. Older entries are removed sooner when the cap is reached. Only limit metadata is saved, never chat content. History is kept once, outside daily usage snapshots.
+
 Token Observatory can add two Claude Code [hooks](https://code.claude.com/docs/en/hooks) (`UserPromptSubmit` and `PostToolUse`). They run in terminal sessions and in the desktop app's Code tab, and add a note to the conversation when:
 
-- your 5-hour limit reaches 90%: the model is asked to finish or pause the current step, start no new work, and write a handoff summary (goal, state, done, not done, next steps, key files, open questions) to `.claude/handoffs/` in the project. Once per 5-hour window per conversation.
+- a reported primary or weekly limit reaches 90%: an advisory asks the model to safely pause and save a handoff in `.claude/handoffs/` (or `.codex/handoffs/`). At 100%, a separate exhausted-limit notice is sent. Notices identify the limit, window and exact reset timestamp when reported; each transition is sent once per window per conversation. Independent limits are tracked separately.
 - the conversation's context reaches 60% of its window: the model is asked to condense what it needs from earlier work, keep output short, and continue. Once each time the context crosses the threshold, so it can fire again after a compaction.
+
+In hard mode, usage pauses expire at the identified window's reset. On each user prompt, the hook attempts a fresh local usage lookup with a one-second interface timeout. A fresh result below 100% permits resumption; an exhausted result keeps that independent limit paused. If lookup and the reset timestamp are unavailable, explicitly confirm that the limit reset. Saved snapshots cannot override that confirmation. Later prompt notes supersede earlier Token Observatory instructions, including older messages without an expiry. Task scope and unrelated approvals remain in force. Unknown reset times are labeled unreported, never guessed.
 
 A hook can't start compaction; the note asks the model to suggest `/compact` if the context keeps growing. To make Claude Code compact earlier by itself, its documented [auto-compact window](https://code.claude.com/docs/en/model-config#set-the-auto-compact-window) can be lowered, for example `/autocompact 600k` or `"autoCompactWindow": 600000` in `settings.json`. Token Observatory doesn't change it.
 

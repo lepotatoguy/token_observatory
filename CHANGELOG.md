@@ -2,6 +2,20 @@
 
 All notable changes to Token Observatory. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [1.4.0] - 2026-10-30
+
+### Added
+
+- Per-provider adjustable thresholds and Warn only or Hard limit (pause) modes under Limit controls.
+- Persistent reset tracking and opt-in desktop reset notifications while the dashboard is open.
+- Metadata-only event history for up to 30 days, capped at 1,000 events and 256 KiB, without duplication in daily usage archives.
+
+### Fixed
+
+- Usage pauses expire with their identified window. Later hook messages supersede historical pauses, support fresh usage checks or user-confirmed reset when lookup fails, and preserve same-chat continuation and existing authorization.
+- Track independent limits separately, distinguish advisory thresholds from exhausted limits, and suppress duplicate pause notices.
+- Saving a handoff no longer requires another conversation. Pauses clear automatically at reset; hooks cannot wake an idle chat.
+
 ## [1.3.1] - 2026-10-28
 
 ### Fixed

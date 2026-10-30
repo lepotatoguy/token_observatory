@@ -343,3 +343,23 @@ node('exportButton').listeners.click();
 assert.equal(run("capturedCSV.split('\\r\\n')[1].split(',')[5]"),'""');
 assert.equal(run("capturedCSV.split('\\r\\n')[1].split(',')[6]"),'""');
 console.log('LM Studio native usage, missing cache fields, provider help, and CSV checks passed.');
+
+// Reset notifications use persistent collector events and respect both opt-in switches.
+run(`const limitNotifications=[];
+  Notification=class {static permission='granted';constructor(title,options){limitNotifications.push({title,...options});}};
+  state.history=''; saved.set('alerts',true); saved.set('alerted',[]);
+  state.data.limit_control={settings:{reset_notifications:true},events:[{at:nowSeconds()-1,type:'reset',provider:'codex',limit:'codex:primary',minutes:300,reset:nowSeconds()-1}]};
+  checkLimitEvents(); checkLimitEvents(); renderLimitEventHistory();`);
+assert.equal(run('limitNotifications.length'),1);
+assert.match(node('limitEventHistory').innerHTML,/Window reset/);
+run(`state.data.limit_control.events[0].limit='codex:secondary';
+  state.data.limit_control.settings.reset_notifications=false; checkLimitEvents();`);
+assert.equal(run('limitNotifications.length'),1);
+run(`state.data.limit_control.settings.reset_notifications=true; state.history='2026-10-01'; checkLimitEvents();`);
+assert.equal(run('limitNotifications.length'),1);
+run(`state.history=''; saved.set('alerts',false); checkLimitEvents();`);
+assert.equal(run('limitNotifications.length'),1);
+assert.match(run("eventDescription({type:'threshold',used:85,mode:'warn'})"),/Threshold reached · 85% · Warn/);
+assert.match(fs.readFileSync(__dirname+'/index.html','utf8'),/id="limitControlsButton"/);
+assert.match(fs.readFileSync(__dirname+'/index.html','utf8'),/256 KiB/);
+console.log('Limit event history, reset notification deduplication, preferences, and history-view suppression passed.');

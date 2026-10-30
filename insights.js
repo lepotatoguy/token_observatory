@@ -34,6 +34,8 @@ function renderInsights(sessions) {
   renderTrends();
   renderPressure();
   renderAlertsButton();
+  checkLimitEvents();
+  renderLimitEventHistory();
 }
 
 // Usage limits. The collector asks Claude Code (/usage) and the Codex app server on Refresh and every few
@@ -98,7 +100,7 @@ function checkResets() {
     if (seen.used >= RESET_ALERT_MIN) {
       const [provider, minutes] = key.split(':'), label = `${providerName(provider)} ${windowLabel(Number(minutes)).toLowerCase()} limit`;
       recent.push({key:`${key}:${seen.resets_at}`, label, at:seen.resets_at});
-      alertOnce(`reset:${key}:${seen.resets_at}`, `${label} has reset`, `It was ${seen.used.toFixed(0)}% used. You can use it again.`);
+      // Persistent collector events deliver reset notifications, including across reloads.
     }
   }
   for (const [provider, quota] of Object.entries(state.data.limits || {})) {
@@ -391,8 +393,10 @@ function alertOnce(key, title, body) {
 function renderAlertsButton() {
   const supported = typeof Notification !== 'undefined';
   $('alertsButton').textContent = alertsEnabled() ? 'Alerts on' : 'Alerts off';
-  $('alertsButton').title = supported ? 'Desktop alerts for context pressure and your daily budget' : 'This browser does not support desktop notifications';
+  $('alertsButton').title = supported ? 'Desktop alerts for usage resets, context pressure and your daily budget' : 'This browser does not support desktop notifications';
   $('alertsButton').disabled = !supported;
+  $('limitAlerts').disabled = !supported;
+  $('limitAlerts').textContent = supported ? (alertsEnabled() ? 'Desktop alerts on' : 'Enable desktop alerts') : 'Desktop alerts unavailable';
 }
 async function toggleAlerts() {
   if (alertsEnabled()) { saved.set('alerts', false); render(); return; }
@@ -423,3 +427,74 @@ $('breakdown').addEventListener('click', event => { breakdownAction(event); sele
 $('trends').addEventListener('click', dayFromEvent);
 $('pressure').addEventListener('click', selectConversation);
 $('alertsButton').addEventListener('click', toggleAlerts);
+
+
+// Limit preferences are shared with conversation hooks, rather than stored only in this browser.
+let limitControls = null;
+function currentLimitControls() { return state.data?.limit_control || limitControls; }
+function checkLimitEvents() {
+  if (state.history) return;
+  const control = currentLimitControls();
+  if (!control?.settings.reset_notifications) return;
+  for (const e of control.events) {
+    if (e.type !== 'reset' || nowSeconds()-e.at > RESET_NOTE_SECONDS) continue;
+    alertOnce(`limit-reset:${e.provider}:${e.limit}:${e.reset}`, `${providerName(e.provider)} usage window reset`,
+      `${windowLabel(e.minutes)} window reset. Any pause for this window has cleared; other limits still apply.`);
+  }
+}
+function eventDescription(e) {
+  const kinds = {threshold:'Threshold reached', exhausted:'Limit exhausted', pause:'Pause requested', reset:'Window reset', settings:'Limit settings changed'};
+  return `${kinds[e.type] || e.type}${e.used === undefined ? '' : ` · ${e.used}%`}${e.mode ? ` · ${e.mode === 'warn' ? 'Warn' : 'Hard limit'}` : ''}`;
+}
+function renderLimitEventHistory() {
+  const control = currentLimitControls();
+  if (!control) return;
+  $('limitEventHistory').innerHTML = control.events.length ? `<table><thead><tr><th>Time</th><th>Limit</th><th>Event</th></tr></thead><tbody>${control.events.map(e => `<tr><td>${escapeHTML(date(e.at))}</td><td>${e.provider ? escapeHTML(`${providerName(e.provider)} · ${e.limit}`) : 'All providers'}</td><td>${escapeHTML(eventDescription(e))}</td></tr>`).join('')}</tbody></table>` : '<p class="insight-note">No limit events recorded yet.</p>';
+}
+async function openLimitControls() {
+  $('limitControlsStatus').textContent = 'Loading…';
+  $('limitControlsDialog').showModal();
+  $('saveLimitControls').disabled = true;
+  try {
+    const response = await fetch('/api/limit-control', {cache:'no-store'});
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    limitControls = await response.json();
+    $('limitControlFields').innerHTML = ['claude','codex'].map(p => {
+      const pref = limitControls.settings[p];
+      return `<fieldset class="limit-preferences"><legend>${providerName(p)}</legend><label>Mode<select id="limitMode-${p}"><option value="warn"${pref.mode === 'warn' ? ' selected' : ''}>Warn only</option><option value="hard"${pref.mode === 'hard' ? ' selected' : ''}>Hard limit (pause)</option></select></label><label>Threshold (%)<input id="limitThreshold-${p}" type="number" min="1" max="100" step="any" value="${pref.threshold}" required></label></fieldset>`;
+    }).join('');
+    $('resetNotifications').checked = limitControls.settings.reset_notifications;
+    $('limitControlsStatus').textContent = '';
+    $('saveLimitControls').disabled = false;
+    if (state.data) state.data.limit_control = limitControls;
+    renderLimitEventHistory();
+  } catch (error) { $('limitControlsStatus').textContent = `Could not load settings: ${error.message}`; }
+}
+async function saveLimitControls(event) {
+  event.preventDefault();
+  const payload = {reset_notifications:$('resetNotifications').checked};
+  for (const p of ['claude','codex']) {
+    const threshold = Number($(`limitThreshold-${p}`).value);
+    if (!Number.isFinite(threshold) || threshold < 1 || threshold > 100) {
+      $('limitControlsStatus').textContent = 'Threshold must be from 1 to 100%.';
+      return;
+    }
+    payload[p] = {mode:$(`limitMode-${p}`).value, threshold};
+  }
+  $('saveLimitControls').disabled = true;
+  try {
+    const response = await fetch('/api/limit-control', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    limitControls = await response.json();
+    if (state.data) state.data.limit_control = limitControls;
+    $('limitControlsStatus').textContent = 'Saved. Applies to new hook events in this chat and other chats.';
+    renderLimitEventHistory();
+  } catch (error) { $('limitControlsStatus').textContent = `Could not save settings: ${error.message}`; }
+  finally { $('saveLimitControls').disabled = false; }
+}
+$('limitControlsButton').addEventListener('click', openLimitControls);
+$('closeLimitControls').addEventListener('click', () => $('limitControlsDialog').close());
+$('limitControlsForm').addEventListener('submit', saveLimitControls);
+$('limitAlerts').addEventListener('click', toggleAlerts);
+
+$('limitControlsMobileButton').addEventListener('click', openLimitControls);
