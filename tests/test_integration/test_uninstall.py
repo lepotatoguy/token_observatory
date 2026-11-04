@@ -4,6 +4,8 @@ import subprocess
 
 import pytest
 
+pytestmark = pytest.mark.skipif(os.name == "nt", reason="POSIX source uninstaller")
+
 
 ROOT = Path(__file__).resolve().parents[2]
 

@@ -1,4 +1,5 @@
 import hashlib
+from contextlib import closing
 from backend.models.snapshot import UsageSnapshot
 import os
 from pathlib import Path
@@ -26,7 +27,7 @@ class MiniMaxCodeTests(unittest.TestCase):
         self.addCleanup(env.stop)
         self.path = minimax_code.database()
         self.path.parent.mkdir(parents=True)
-        with sqlite3.connect(str(self.path)) as connection:
+        with closing(sqlite3.connect(str(self.path))) as connection, connection:
             connection.executescript('''
                 CREATE TABLE local_runtime_sessions (
                     session_id TEXT PRIMARY KEY, title TEXT, workspace_dir TEXT,
@@ -83,7 +84,7 @@ class MiniMaxCodeTests(unittest.TestCase):
 
     def test_missing_and_incompatible_database_are_safe(self):
         self.assertEqual(minimax_code.read(self.root/'missing'), ([],[],[]))
-        with sqlite3.connect(str(self.path)) as connection:
+        with closing(sqlite3.connect(str(self.path))) as connection, connection:
             connection.execute('DROP TABLE local_runtime_token_usage')
         sessions, sources, warnings = minimax_code.read()
         self.assertEqual(sessions, [])

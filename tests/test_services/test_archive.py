@@ -1,5 +1,6 @@
 import datetime as dt
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -44,7 +45,8 @@ class ArchiveTests(unittest.TestCase):
             self.assertEqual(reopened.dates(),['2026-10-17','2026-10-16'])
             self.assertEqual(reopened.load('2026-10-16')['sessions'][0]['totals']['total'],20)
             self.assertEqual(reopened.load('2026-10-17')['schema_version'],1)
-            self.assertEqual((Path(folder)/'2026-10-17.json.gz').stat().st_mode & 0o777,0o600)
+            if os.name != 'nt':
+                self.assertEqual((Path(folder)/'2026-10-17.json.gz').stat().st_mode & 0o777,0o600)
 
     def test_throttle_and_failed_write_preserve_existing_snapshot(self):
         with tempfile.TemporaryDirectory() as folder:

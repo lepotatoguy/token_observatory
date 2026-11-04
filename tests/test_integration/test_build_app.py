@@ -73,6 +73,7 @@ def test_checkout_rebuilds_existing_dist(tmp_path, monkeypatch, worktree):
     assert (target / 'backend/static/index.html').read_text() == '<h1>changed source</h1>'
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="macOS app executable permissions require POSIX")
 def test_build_repeatedly_uses_only_temp_destination(tmp_path, monkeypatch):
     root = tmp_path / 'source'
     root.mkdir()

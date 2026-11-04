@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 import stat
 import tempfile
@@ -46,6 +47,7 @@ class ParseTests(unittest.TestCase):
         self.assertIsNone(live_limits.parse_codex_limits({}, now=5))
 
 
+@unittest.skipIf(os.name == "nt", "fake provider executables use POSIX shell scripts")
 class ProcessTests(unittest.TestCase):
     def test_claude_usage_runs_print_mode_without_persistence(self):
         with tempfile.TemporaryDirectory() as folder:
