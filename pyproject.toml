@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "token-observatory"
+version = "1.5.0"
+description = "Loopback dashboard for local AI token usage"
+requires-python = ">=3.10"
+dependencies = ["flask>=3.1,<4", "pydantic>=2,<3", "requests>=2,<3"]
+
+[project.optional-dependencies]
+test = ["pytest>=8,<10"]
+
+[tool.setuptools.packages.find]
+include = ["backend", "backend.*"]
+
+[tool.setuptools.package-data]
+backend = ["static/**/*", "static/*", "data/*.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

@@ -2,6 +2,21 @@
 
 All notable changes to Token Observatory. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [1.5.0] - 2026-11-04
+### Added
+- Flask/Pydantic backend and React 18/TypeScript dashboard, with production assets bundled into source and native releases.
+- Local MiniMax usage attribution from its native ledger and model-tagged Claude Code/Codex records, across dashboard panels and exports.
+- Independent five-hour hard thresholds and configurable weekly reserves, with repeated native hook enforcement and opt-in desktop threshold notifications.
+- Compressed daily history, with continued support for existing JSON archives.
+
+### Fixed
+- Preserve provider history, conversation grouping, token accounting, and all 24 Stats panels through the rewrite.
+- Align sidebar icons and labels, and place the final Stats cards together without empty grid space.
+- Isolate collector PID files by port and verify process identity before stopping a collector.
+- Preserve hook and statusline commands across source, wheel, and native installations.
+- Rebuild stale checkout assets during installation and resolve the base Python interpreter before creating the macOS app runtime.
+- Retain loopback security checks through the development proxy and reject foreign origins.
+
 ## [1.4.0] - 2026-10-30
 
 ### Added

@@ -1,10 +1,10 @@
 # Installing Token Observatory
 
-Token Observatory is a local dashboard for Claude Code, Codex and local LLM (Ollama, LM Studio, llama.cpp) token usage. It reads the session logs Claude Code and Codex already write on your machine, and counts local LLM requests sent through its loopback pass-through ports. It has no dependencies, needs no API keys, and uploads nothing. Its only network requests are an optional download of published model prices ([Cost estimates](#cost-estimates)) and a daily check for a new version ([Updates](#updates)).
+Token Observatory is a local dashboard for Claude Code, Codex and local LLM (Ollama, LM Studio, llama.cpp) token usage. It reads the session logs Claude Code and Codex already write on your machine, and counts local LLM requests sent through its loopback pass-through ports. Source installs use Flask, Pydantic and requests in a private Python environment. Tracking needs no API keys and uploads no telemetry. Its only network requests are an optional download of published model prices ([Cost estimates](#cost-estimates)) and a daily check for a new version ([Updates](#updates)).
 
 ## Requirements
 
-- Python 3.9 or later, available as `python3`
+- Python 3.10 or later, available as `python3`
 - Claude Code and/or Codex, used on the same machine (otherwise there is nothing to show)
 - macOS or Linux. On Windows, see [Run from source](#run-from-source).
 
@@ -14,7 +14,7 @@ Check your Python version:
 python3 --version
 ```
 
-On macOS, the Xcode Command Line Tools include Python 3.9. Install them with `xcode-select --install` if `python3` is missing.
+Use a Python 3.10 or later installation for source builds; the macOS system Python may be too old. Building the frontend from a checkout also needs Node.js 20 or later.
 
 ## Download a release
 
@@ -61,10 +61,16 @@ token-observatory --no-open  # start the collector only and print the URL
 
 ## Run from source
 
-No install is needed. From the repository folder:
+Install dependencies and build the frontend once from the repository folder:
 
 ```sh
-python3 server.py
+python3 -m venv .venv
+.venv/bin/python -m pip install -e '.[test]'
+cd frontend
+npm ci
+npm run build
+cd ..
+.venv/bin/python launcher.py --serve
 ```
 
 Then open <http://127.0.0.1:8765>. Stop with Ctrl+C. This also works on Windows (use `python` or `py` in place of `python3`), though Windows hasn't been tested.
@@ -83,7 +89,7 @@ Then open <http://127.0.0.1:8765>. Stop with Ctrl+C. This also works on Windows 
 Example:
 
 ```sh
-python3 server.py --port 8766 --claude-home /path/to/.claude --codex-home /path/to/.codex
+.venv/bin/python launcher.py --serve --port 8766 --claude-home /path/to/.claude --codex-home /path/to/.codex
 ```
 
 ### Local LLMs
@@ -128,20 +134,24 @@ The newest of the live check, the status line and the Claude desktop app's occas
 
 ### Conversation hooks
 
-Open **Limit controls** in the sidebar to choose **Warn only** or **Hard limit (pause)** and a threshold from 1 to 100%, separately for Claude Code and Codex. Existing installations keep hard mode and their configured threshold (90% by default). Warn mode never requests a usage pause or mandatory handoff. These controls require the hooks below; they do not block requests at the provider.
+Open **Settings** for Providers, Data sources, Limit controls, appearance, notifications, and dashboard defaults. The theme shortcut uses a sun or moon icon; choose System, Light or Dark under Settings. Default time range and subagent inclusion are saved in this browser.
+
+Under **Settings → Limit controls**, each provider has a warning, a **5-hour hard limit (% used)**, and a **Weekly reserve (% remaining)**. Enable or disable each independently. For example, a 95% five-hour limit stops at 95% used in that window; a 3% weekly reserve stops only at 97% weekly usage. Either condition can stop work. Existing hard percentages are preserved for the five-hour window and receive a 3% weekly reserve; warning-only and disabled settings remain advisory or disabled. The reserve accepts 0 to 100%; other thresholds accept 1 to 100%. A warning cannot exceed an enabled five-hour hard limit.
 
 Pauses clear automatically at reset. Already-authorized work can continue at the next chat execution opportunity without another resume approval. Hooks cannot wake an idle chat, so it may still need a message. A new conversation is optional.
 
-Enable **Notify when a usage window resets** and **Alerts on** for desktop notifications while the dashboard is open. Watched reset times persist across collector restarts and page reloads.
+Warnings are visible in the quota panel and hook messages. Enable **Alerts on** for threshold desktop notifications while the dashboard is open. **Notify when a usage window resets** controls reset notifications separately. Watched reset times persist across collector restarts and page reloads.
 
 The dialog also shows 30 days of event history, capped at 1,000 events and 256 KiB. Older entries are removed sooner when the cap is reached. Only limit metadata is saved, never chat content. History is kept once, outside daily usage snapshots.
 
-Token Observatory can add two Claude Code [hooks](https://code.claude.com/docs/en/hooks) (`UserPromptSubmit` and `PostToolUse`). They run in terminal sessions and in the desktop app's Code tab, and add a note to the conversation when:
+Token Observatory installs [hooks](https://code.claude.com/docs/en/hooks) for `UserPromptSubmit`, `PreToolUse`, and `PostToolUse`. Update an existing installation by running the install command again. They run in supported coding clients and respond when:
 
-- a reported primary or weekly limit reaches 90%: an advisory asks the model to safely pause and save a handoff in `.claude/handoffs/` (or `.codex/handoffs/`). At 100%, a separate exhausted-limit notice is sent. Notices identify the limit, window and exact reset timestamp when reported; each transition is sent once per window per conversation. Independent limits are tracked separately.
+- a configured warning or hard condition is reached. Warnings are advisory. Hard conditions block supported tool calls before execution and stop prompt/post-tool events using the host's native controls. Enforcement repeats while the condition holds; history and warning notifications remain deduplicated. Messages identify the window and its reported reset timestamp.
 - the conversation's context reaches 60% of its window: the model is asked to condense what it needs from earlier work, keep output short, and continue. Once each time the context crosses the threshold, so it can fire again after a compaction.
 
-In hard mode, usage pauses expire at the identified window's reset. On each user prompt, the hook attempts a fresh local usage lookup with a one-second interface timeout. A fresh result below 100% permits resumption; an exhausted result keeps that independent limit paused. If lookup and the reset timestamp are unavailable, explicitly confirm that the limit reset. Saved snapshots cannot override that confirmation. Later prompt notes supersede earlier Token Observatory instructions, including older messages without an expiry. Task scope and unrelated approvals remain in force. Unknown reset times are labeled unreported, never guessed.
+Pauses expire at their own window's reset, or clear when fresh usage falls below that window's configured threshold. Prompt events check current usage; tool events check at most once per 30 seconds, with a one-second interface timeout. If a lookup fails, the last valid snapshot remains in use until its reported reset. Unknown reset times remain unreported. To change a policy when current usage cannot be verified, use Limit controls. Context messages cannot override a native stop.
+
+These hooks are a guardrail, not a provider-side request cap. An in-flight request, parallel work, unavailable telemetry, hook errors/lock contention, hosted tools, or unsupported client paths can overshoot a threshold. A native stop can end a turn before the assistant saves a handoff. Hooks do not wake an idle chat or compact it themselves.
 
 A hook can't start compaction; the note asks the model to suggest `/compact` if the context keeps growing. To make Claude Code compact earlier by itself, its documented [auto-compact window](https://code.claude.com/docs/en/model-config#set-the-auto-compact-window) can be lowered, for example `/autocompact 600k` or `"autoCompactWindow": 600000` in `settings.json`. Token Observatory doesn't change it.
 
@@ -176,6 +186,12 @@ Restart the collector afterwards. The dashboard labels these values "configured 
 
 The server listens on `127.0.0.1` only and rejects requests whose `Host` header isn't the loopback address.
 
+## MiniMax
+
+MiniMax tracking is local-only. Native MiniMax Code records are imported from ~/.minimax/v2/sqlite/runtime-state.sqlite with a read-only connection. MINIMAX_DATA_DIR or MAVIS_DATA_DIR can select another runtime folder. Model-tagged Claude Code and Codex responses are also attributed to MiniMax after thread merging, without counting the same response twice.
+
+No plan key is required, and tracking does not request remote account quotas. Account quota and unsupported context capacities remain unreported. Provider choices control live services while retained recorded usage remains visible.
+
 ## Updates
 
 When the collector starts, and then at most once a day, it asks GitHub's public releases API (`api.github.com/repos/lepotatoguy/token_observatory/releases/latest`) whether a newer version exists. Nothing is sent but the request. Drafts, pre-releases and versions that aren't newer are ignored, and a failed check is only noted in `service.log`. The answer is cached as `update-check.json` in the data folder.
@@ -205,7 +221,7 @@ git pull
 ./install.sh
 ```
 
-Then quit the running collector so the new version starts on next launch. On macOS run `pkill -f "Token Observatory.app/Contents/Resources/dashboard/server.py"`; on Linux run `pkill -f token-observatory/app/server.py`. Saved history is kept.
+Stop the collector through the installed launcher with `--stop`, then reopen it. On a source checkout use `.venv/bin/python launcher.py --stop`. Saved history is kept.
 
 ## Uninstall
 

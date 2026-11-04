@@ -1,11 +1,26 @@
 # Development notes
 
+## Current architecture and setup
+
+The backend lives in backend/ with a Flask application factory, WSGI security middleware, strict Pydantic contracts, incremental log parsers, stateful services and API blueprints. The frontend lives in frontend/ with React 18, strict TypeScript, Vite, TanStack Query for API caching and Zustand for UI state. Stats is part of the React app.
+
+Use Python 3.10 or later and Node.js 20 or later. Create a virtual environment, install `.[test]`, run `npm ci` in frontend/, then `npm run build`. The build writes frontend/dist and package-owned static assets. Start production with `.venv/bin/python launcher.py --serve`; the default port is 8765. Development uses `npm run dev` in frontend/ and `.venv/bin/python launcher.py --serve --port 8766` so the Vite API proxy reaches the backend.
+
+The factory starts no background workers. The launcher explicitly starts and stops collection, live-limit, price and update workers. Tests construct isolated apps without scanning personal logs. Backend tests run with `.venv/bin/python -m pytest`; frontend tests run with `npm test -- --run` in frontend/.
+
+New daily archives use atomic, private gzip JSON files. Existing plain JSON history remains readable and appears once per day in the selector. Python wheels include backend/static and backend/data/prices.json after the frontend build. Native standalone release builds use packaging/token_observatory.spec; source macOS app builds use build_app.py. Source builds require the selected Python runtime on the same machine.
+
+MiniMax tracking remains local-only. The native read-only SQLite importer and model-tagged response splitting are preserved. Disabling a provider does not hide recorded history. Five-hour hard thresholds and weekly reserves remain independent.
+
+The sections below document accounting and other retained behavior; module names now refer to backend/parsers or backend/services rather than root-level files.
+
+
 Technical details for people working on Token Observatory or checking exactly what its numbers mean. For installing and using the app, see [README.md](README.md) and [INSTALL.md](INSTALL.md).
 
 ## Run from source
 
 ```sh
-python3 server.py
+.venv/bin/python launcher.py --serve
 ```
 
 Open <http://127.0.0.1:8765>. Stop with Ctrl+C. The first scan reads every retained log and can take longer than later updates.
@@ -13,12 +28,12 @@ Open <http://127.0.0.1:8765>. Stop with Ctrl+C. The first scan reads every retai
 Custom locations and port:
 
 ```sh
-python3 server.py --port 8766 --codex-home /path/to/.codex --claude-home /path/to/.claude --data-dir /path/to/history
+.venv/bin/python launcher.py --serve --port 8766 --codex-home /path/to/.codex --claude-home /path/to/.claude --data-dir /path/to/history
 ```
 
 `CODEX_HOME` and `CLAUDE_CONFIG_DIR` are honored. Log defaults: `~/.codex/sessions` and `~/.claude/projects`.
 
-`python3 launcher.py` starts the collector in the background once and opens the browser (`--no-open`, `--stop`, `--port N`, `--version`; also `--statusline`, `--hook [claude|codex]`, `--install-statusline`, `--install-hooks` and their `--uninstall-*` forms). It is also the entry point of the standalone builds.
+`python3 launcher.py` starts the collector in the background once and opens the browser (`--no-open`, `--stop`, `--port N`, `--version`; also `--statusline`, `--hook [claude|codex|minimax]`, `--install-statusline`, `--install-hooks` and their `--uninstall-*` forms). It is also the entry point of the standalone builds.
 
 ## Features
 
@@ -31,6 +46,7 @@ python3 server.py --port 8766 --codex-home /path/to/.codex --claude-home /path/t
 - Limit forecast: logged tokens per quota percent in the current window, projected at the pace of the last hour (5-hour) or last day (weekly). Reset alerts remember each window's reset time in the browser and, once it passes for a window at least 50% used, show a note for 30 minutes and send a desktop notification when Alerts are on.
 - Dark theme: every color is a CSS variable with a dark value; `theme.js` applies the saved Auto, Light or Dark choice before the page draws.
 - Provider filters, search, subagent filtering, pause, and CSV/JSON exports of filtered totals. Tokens and Last activity sort in either direction; newest activity is the default.
+- Shared limit settings store warn and hard as used percentages, plus weekly_reserve as a remaining percentage; null disables each action. Existing hard values remain five-hour thresholds with a 3% weekly reserve after migration. Warning-only settings keep weekly stops disabled. The shared hard_threshold helper selects reported 300-minute and 10080-minute windows independently. Warning cannot exceed the five-hour hard threshold. Theme and dashboard defaults remain browser settings.
 - Limit controls (`limit_control.py`, `/api/limit-control` GET/POST): `limit-settings.json` shares per-provider modes and thresholds with hooks. Defaults migrate `hook_limit_percent`. Atomic writes and cross-process locking protect preferences and `limit-events.json`. History is pruned to 30 days, 1,000 events and 256 KiB with at most 64 watched windows. It stores metadata only and is attached to live usage after archive capture to avoid duplication in daily snapshots. Pause events are recorded only for actual hook emissions. The collector tracks resets without an open page; notifications use the existing opt-in browser Alerts path while the dashboard is open. Reset clears the pause automatically, but hooks cannot start an idle chat turn. Settings apply on the next hook event without reinstalling.
 - With no row selected, the inspector combines usage from chats matching the current filters and search. Select a row for its details; select it again or choose All conversations to go back.
 - Automatic daily JSON archives and a saved-history selector.
@@ -41,8 +57,8 @@ python3 server.py --port 8766 --codex-home /path/to/.codex --claude-home /path/t
 - Usage limits: the newest of the Codex live check and the newest Codex `rate_limits` snapshot across sessions (`limits.codex` in `/api/usage`, with `observed_at` and `source: live` for the live check). For Claude (`limits.claude`, see `claude_limits.py`), the newest of the live check (`source: live`) and the status line capture wins when it is at least as new as the desktop sample; otherwise, best source first: the status line capture `claude-rate-limits.json` in the data folder, written by `launcher.py --statusline` from the `rate_limits.five_hour` / `rate_limits.seven_day` fields Claude Code passes to its [status line](https://code.claude.com/docs/en/statusline) (Pro and Max plans, after the first reply; `source: statusline`); otherwise the Claude desktop app's `plan-usage-history.json` (newest sample's `u.fh` and `u.sd`, undocumented; the organization ID is never read out) with reset times from `quotaLimits` that Claude Code logs when a request is rejected at a limit, kept only while still in the future (`source: desktop`). The capture wins when it is at least as new as the desktop sample. `--install-statusline` sets `statusLine` in Claude Code's `settings.json` (backup in `settings.json.bak`) and refuses to replace someone else's status line.
 - Suggested daily budget: for each provider with a weekly percentage of at least 1 and a reset time, tokens used from the window start (reset minus 7 days) to the snapshot, divided by that percentage, times the percentage left, spread over the days to reset (at least one). Claude's quota is shared with claude.ai and desktop chats that aren't in these logs, so the Claude share tends to be low.
 - Budget meter: one zone per provider, its width proportional to that provider's suggested daily share (scaled to a custom budget when one is set), filled by that provider's tokens today, with a line per provider underneath. Without a suggestion the providers' tokens stack on one track. A zone at or over 100% gets a red outline and red text.
-- Cost estimate (`pricing.py`, `prices.json`): `GET /api/pricing` returns price entries in precedence order: `config.json` overrides, the parsed table from Anthropic's pricing page (downloaded at most daily, cached as `pricing.json` beside `config.json`, last good copy kept on failure), then the bundled `prices.json`. The dashboard prices each event by its model (Haiku 5.5 switches rate above a 100k prompt) and sums it for the card and breakdown. Set `TOKEN_OBSERVATORY_PRICE_UPDATES=0` or `"price_updates": false` to skip the download.
-- Conversation hooks (`session_hooks.py`, `launcher.py --hook`): `UserPromptSubmit` and `PostToolUse` deliver `hookSpecificOutput.additionalContext`. These are appended to the host conversation, not retractable messages. `hook-state.json` stores per-provider/session and per-limit window transitions, with nonblocking cross-process locking and atomic writes. Primary and secondary limits are read from saved captures, live checks and Codex rollouts. Threshold (default 90%) and exhaustion (100%) notices are distinct; reset events expire only the affected window. A 60-second reset timestamp tolerance suppresses source jitter. Legacy `handoff` state is migrated. Every user prompt attempts a fresh lookup through `live_limits.py` (one-second interface timeout, under the installed five-second hook timeout) and delivers a policy superseding historical Token Observatory pauses even if state was pruned. Lookup failure still delivers recovery instructions: accept explicit user-confirmed reset; a fresh exhausted limit prevents resumption for that limit. Fresh readings are retained so older saved snapshots cannot re-pause work on the next tool event. Handoffs preserve authorization and never mandate another conversation. Hooks do not interpret user intent or enforce model behavior; the host model applies the conditional resumption policy. Unknown reset times remain unreported. Context reminders condense and continue at `hook_context_percent` (default 60), re-armed below threshold, suppressed while usage is above its pause threshold to avoid conflicting instructions. Sessions are pruned after seven days. Hook errors or lock contention return no output. Installation merges settings, preserves other hooks, and requires Codex trust through `/hooks` when the command changes.
+- Cost estimate (`pricing.py`, `prices.json`): `GET /api/pricing` returns price entries in precedence order: config overrides, daily cached Anthropic prices, then bundled prices. OpenAI/MiniMax bundled entries carry official source URLs and verification dates. `eventPricing` applies per-model `long_prompt` thresholds (default 100k for legacy Anthropic entries; 272k for the verified OpenAI entries). Null component rates contribute $0 with an unreported flag; known components still contribute. Local providers override model prices to $0. `costOf` tracks known-price/local token coverage and fallback model names. Cards and breakdowns append * when unreported prices contribute $0. Set `TOKEN_OBSERVATORY_PRICE_UPDATES=0` or `"price_updates": false` to skip the Anthropic download.
+- Conversation hooks use UserPromptSubmit, PreToolUse and PostToolUse. PreToolUse denies supported calls; prompts return decision:block and continue:false; post-tool events return continue:false. Warnings supply systemMessage and additionalContext. Hard enforcement repeats on each event; history remains deduplicated per window/policy. Prompt checks and tool checks throttled to 30 seconds use one-second interface timeouts. Fresh usage clears only its own window below its threshold. Expired snapshots do not block. Metadata-only hook-state.json uses atomic writes and a nonblocking process lock; errors or contention fail open. In-flight work, parallel requests and unsupported host paths limit enforcement. Context reminders condense and continue above hook_context_percent, default 60, unless a hard condition is active. Installation preserves other hooks and requires Codex trust through /hooks.
 - Daily budget and alert settings live in the browser's localStorage (`to.*` keys), per browser. The budget counts every recorded token today across providers, subagents and cache reads included.
 - Breakdown by model (from each usage event) or project (from the session's working folder), with each group's share of input served from cache.
 - Trends use every retained log for the selected provider, independent of the time range: today vs the average of the previous 7 days, the last 7 days vs the 7 before, the busiest of the last 30 days, and a 28-day weekday-by-hour heatmap.
@@ -85,9 +101,10 @@ The server binds only to `127.0.0.1`, rejects unrelated Host headers and cross-s
 ## Tests
 
 ```sh
-python3 -m unittest -v
-node --check app.js
-node test_app.js
+.venv/bin/python -m pytest
+cd frontend
+npm test -- --run
+npm run build
 ```
 
 ## Building and releasing
@@ -103,35 +120,33 @@ On macOS this makes `dist/Token Observatory.app`; on Linux and Windows a one-fil
 
 To release:
 
-1. Bump `VERSION` in `launcher.py` and add an entry to [CHANGELOG.md](CHANGELOG.md).
+1. Bump `VERSION` in `backend/version.py` and the package version in `pyproject.toml` and add an entry to [CHANGELOG.md](CHANGELOG.md).
 2. Optionally run **Release** from the Actions tab to build and smoke-test all three platforms without publishing.
 3. Tag and push: `git tag -a v1.2.3 -m "Token Observatory v1.2.3" && git push origin v1.2.3`. The workflow checks the tag against `VERSION`, builds on macOS (Apple silicon), Ubuntu, and Windows runners, smoke-tests each build, adds a `git archive` source tarball (`TokenObservatory-<version>-source.tar.gz`, used by source installs to update), and publishes the release with `SHA256SUMS.txt`. The in-app updater looks for these exact asset names, so keep them stable.
 
-`python3 build_app.py` builds the older source-based macOS app in `~/Applications`, which runs `server.py` with the Mac's own Python.
+`python3 build_app.py` builds the source-based macOS app in `~/Applications`, with a private environment using the selected Python 3.10 or later installation. Checkout builds regenerate the frontend; release source archives carry compiled assets. The source app still requires its base Python installation.
 
 ## Repository layout
 
 | Path | Purpose |
 |---|---|
-| `server.py` | Log discovery, parsing, HTTP API (`/api/usage`, `/api/history/<day>`, `/api/health`, `/api/update`, `/api/providers`, `POST /api/refresh`, `POST /api/providers`, `POST /api/update/settings`, `POST /api/update/install`) |
-| `codex_usage.py`, `claude_context.py` | Codex accounting; Claude capacity and cost |
-| `claude_limits.py`, `claude_statusline.py` | Claude usage limits; status line capture and settings install |
-| `pricing.py` | Downloads and parses Anthropic's published prices daily (`GET /api/pricing`), plus `config.json` price overrides |
-| `prices.json` | Bundled fallback prices used when the online prices cannot be fetched |
-| `lmstudio_chats.py` | Read-only LM Studio desktop chat usage |
-| `providers.py`, `local_proxy.py` | Provider choices, detection and first-run state; local LLM pass-through and its usage log |
-| `live_limits.py` | Live limit checks through `claude -p /usage` and `codex app-server` |
-| `session_hooks.py` | Conversation hooks for the 5-hour limit and context, and their install |
-| `updater.py`, `update_install.py` | Update check, prompt settings, verified downloads; per-install replacement and restart |
-| `archive.py` | Daily JSON snapshots and per-platform data folder |
-| `launcher.py` | Start-once launcher, status line and hook modes; entry point of the standalone builds |
-| `index.html`, `app.js`, `insights.js`, `updates.js`, `setup.js`, `theme.js`, `style.css`, `logo.svg` | Dashboard UI (`insights.js`: limits, forecast, reset alerts, budget, breakdown, trends, alerts; `updates.js`: update prompt; `setup.js`: providers and first-run setup; `theme.js`: theme choice) |
-| `packaging/` | PyInstaller spec, icons, `.deb` builder, release notes |
-| `.github/workflows/release.yml` | Release builds |
-| `install.sh`, `uninstall.sh`, `scripts/` | Source install for macOS and Linux |
-| `build_app.py`, `launch-app.sh` | Source-based macOS app |
-| `test_*.py`, `test_app.js` | Tests |
+| backend/app.py, backend/config.py, backend/middleware/ | Flask factory, configuration and request security |
+| backend/parsers/ | Incremental Claude/Codex logs, local proxy and LM Studio records |
+| backend/services/ | Store, limits, pricing, history, providers, hooks, native MiniMax and updates |
+| backend/models/ | Strict Pydantic contracts |
+| backend/api/ | Health and dashboard routes |
+| backend/data/prices.json | Package-owned fallback prices, copied from root prices.json |
+| backend/static/ | Generated production frontend included in packages |
+| frontend/src/ | React components, typed API client, query hooks, UI store and pure utilities |
+| frontend/dist/ | Generated Vite production output |
+| tests/ | Backend, API, lifecycle, installer and packaging tests |
+| launcher.py, backend/launcher.py | Compatibility entry point and CLI implementation |
+| packaging/, .github/workflows/release.yml | Standalone native packages and release workflow |
+| install.sh, uninstall.sh, scripts/ | Source installation and launchers |
+| build_app.py, launch-app.sh | Source-based macOS application |
 
-`dist/`, `build/`, and `private/` are ignored by git.
+Generated assets, node_modules, dist, build, and private runtime data are ignored by git. Build the frontend before building a Python wheel so its static assets are included.
 
-Telemetry references: [Codex App Server](https://learn.chatgpt.com/docs/app-server), [Claude Code monitoring](https://code.claude.com/docs/en/monitoring-usage), [Claude Code status line](https://code.claude.com/docs/en/statusline).
+### MiniMax accounting
+
+MiniMax tracking is local-only. The read-only native SQLite importer and model-tagged Claude/Codex splitting retain recorded usage without account API calls. Codex segments merge before splitting, so cumulative counters are not counted twice. Unknown quotas and capacities remain unreported. The legacy manual credential API is retained for compatibility, but the dashboard does not offer credentials and collection/hooks do not call remote MiniMax quotas.

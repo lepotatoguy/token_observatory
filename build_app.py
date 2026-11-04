@@ -5,8 +5,10 @@ import plistlib
 import shutil
 import subprocess
 import tempfile
+import sys
 import zipfile
-from launcher import VERSION
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from backend.version import VERSION
 
 ROOT = Path(__file__).resolve().parent
 IDENTIFIER = 'local.tokenobservatory.dashboard'
@@ -20,7 +22,28 @@ def check_owned(path):
             if plistlib.load(source).get('CFBundleIdentifier') != IDENTIFIER:
                 raise RuntimeError(f'Refusing to overwrite another application: {path}')
 
-APP_FILES = ['server.py', 'archive.py', 'codex_usage.py', 'claude_context.py', 'claude_limits.py', 'claude_statusline.py', 'live_limits.py', 'pricing.py', 'prices.json', 'session_hooks.py', 'limit_control.py', 'updater.py', 'update_install.py', 'local_proxy.py', 'lmstudio_chats.py', 'providers.py', 'launcher.py', 'index.html', 'app.js', 'insights.js', 'updates.js', 'setup.js', 'theme.js', 'style.css', 'logo.svg']  # Copied into the app; tests reuse this list.
+APP_FILES = ['launcher.py', 'pyproject.toml', 'logo.svg']
+
+def prepare_runtime(resources):
+    if sys.version_info < (3, 10):
+        raise RuntimeError('Python 3.10 or later is required')
+    static = ROOT / 'frontend/dist'
+    if not (static / 'index.html').is_file():
+        static = ROOT / 'backend/static'
+    if (ROOT / '.git').exists() or not (static / 'index.html').is_file():
+        subprocess.run(['npm', 'ci'], cwd=ROOT / 'frontend', check=True)
+        subprocess.run(['npm', 'run', 'build'], cwd=ROOT / 'frontend', check=True)
+        static = ROOT / 'frontend/dist'
+    shutil.copytree(ROOT / 'backend', resources / 'backend',
+                    ignore=shutil.ignore_patterns('__pycache__', '*.pyc', 'static'))
+    shutil.copytree(static, resources / 'backend/static')
+    interpreter = str(Path(sys._base_executable).resolve())
+    subprocess.run([interpreter, '-m', 'venv', '--copies', str(resources / '.venv')], check=True)
+    subprocess.run([str(resources / '.venv/bin/python'), '-m', 'pip', 'install', str(resources)], check=True)
+    for generated in [resources / 'build', *resources.glob('*.egg-info')]:
+        if generated.is_dir():
+            shutil.rmtree(generated)
+
 
 
 def main():
@@ -37,6 +60,7 @@ def main():
         executable.parent.mkdir(parents=True)
         for name in APP_FILES:
             shutil.copy2(ROOT / name, resources / name)
+        prepare_runtime(resources)
         shutil.copy2(ROOT / 'launch-app.sh', executable)
         executable.chmod(0o755)
         master = temporary / 'logo.png'
@@ -65,6 +89,9 @@ def main():
                 if path.is_file():
                     archive.write(path, path.relative_to(temporary))
         DESTINATION.parent.mkdir(parents=True, exist_ok=True)
+        old_dashboard = DESTINATION / 'Contents/Resources/dashboard'
+        if old_dashboard.exists():
+            shutil.rmtree(old_dashboard)
         shutil.copytree(application, DESTINATION, dirs_exist_ok=True)
         # Unpacked build copies also appear in the macOS app catalog.
         if legacy.exists():

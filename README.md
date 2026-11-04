@@ -1,6 +1,8 @@
 # Token Observatory
 
-See how many tokens your Claude Code, Codex and local LLM (Ollama, LM Studio, llama.cpp) chats use, live, in a dashboard on your own computer. It reads the logs Claude Code and Codex already save, reads saved LM Studio desktop chats, and counts local API requests on a pass-through port. Nothing is uploaded and no API key is needed. It makes two kinds of read-only network requests, both optional: published model prices for the cost estimate (see [INSTALL.md](INSTALL.md#cost-estimates)) and a daily check for a new version on GitHub (see [INSTALL.md](INSTALL.md#updates)).
+See token usage for Claude Code, Codex, MiniMax and local LLMs (Ollama, LM Studio, llama.cpp) in a dashboard on your computer. It reads existing local logs and counts local API requests on a pass-through port. Chat content stays local. MiniMax tracking uses local records without a plan key or remote quota requests. Optional network requests fetch published prices and software updates.
+
+The source uses a Flask and Pydantic backend in `backend/` and a React 18, TypeScript and Vite frontend in `frontend/`. Source development needs Python 3.10 or later and Node.js 20 or later. Packaged standalone releases bundle their runtime. See [development setup](DEVELOPMENT.md).
 
 ## Download
 
@@ -36,15 +38,15 @@ The dashboard opens in your browser at <http://127.0.0.1:8765>. The first launch
 - **Export CSV** and **Export JSON** save what you're looking at.
 - A saved copy is kept for each day. Pick a date next to the time range to look back.
 - Click any day's bar in **Token activity** to see just that day. Click the date chip to go back.
-- **Usage limits** shows how much of your Claude and Codex 5-hour and weekly quota you've used and when each resets. Under each limit, a forecast says when you'll reach it at your recent pace (the last hour for the 5-hour limit, the last day for the weekly one), or how full it will be when it resets. When a limit you had used at least halfway resets, the card says so, and with **Alerts** on you also get a desktop notification. **Refresh** (top right) asks Claude Code and Codex for the current numbers, and the collector also checks every 5 minutes. Opening or reloading the dashboard checks too.
-- **Today's budget** compares today's tokens with a suggested daily amount that keeps you within your weekly limits. The meter has one part for Claude Code and one for Codex, each sized by that tool's suggested share, with a line per tool underneath. You can also set your own target.
-- **Estimated cost** (top row) prices your tokens at published API list prices, per model. Anthropic's prices are downloaded about once a day; if that fails, the prices bundled in `prices.json` are used. Models with no known price are left out and named in the card's tooltip.
+- **Usage limits** shows how much of your enabled Claude and Codex 5-hour and weekly quota you've used and when each resets. Under each limit, a forecast says when you'll reach it at your recent pace (the last hour for the 5-hour limit, the last day for the weekly one), or how full it will be when it resets. When a limit you had used at least halfway resets, the card says so, and with **Alerts** on you also get a desktop notification. **Refresh** (top right) checks enabled providers for the current numbers, and the collector also checks every 5 minutes. Opening or reloading the dashboard checks too.
+- **Today's budget** compares today's tokens with a suggested daily amount that keeps you within your weekly limits. The meter has a part for each enabled provider, sized by its suggested share, with a line per provider underneath. You can also set your own target.
+- **Estimated cost** (top row) prices your tokens at published API list prices, per model. Anthropic's prices are downloaded about once a day; OpenAI and MiniMax use verified snapshots in `prices.json`. Local-provider usage counts as $0. Unreported prices count as $0* so totals stay numeric; the asterisk marks the fallback, and affected models appear in the card's tooltip. Known components still contribute when another component lacks a price.
 - **Breakdown** splits usage by model or project. Each row has a meter split into input and output; click a name to see fresh input, cache read, cache write, output and cost, and click **Other** to list the models or projects grouped there. **Trends** compares today with your recent average and shows when you use tokens most.
-- Turn on **Alerts** (top right) for a desktop notification when a chat's context is almost full, you pass your budget, or a usage limit resets.
+- Turn on **Alerts** (top right) for a desktop notification when a chat's context is almost full, you pass a usage threshold or budget, or a usage limit resets.
 - **Theme** (top right) switches between Auto (follows your system), Light and Dark.
 
-- Optional **conversation hooks** (see [INSTALL.md](INSTALL.md#conversation-hooks)): near a reported usage limit, the running Claude Code or Codex chat is asked to pause for that window and save a handoff; same-chat resumption is supported after reset; when its context passes 60%, it is asked to condense and continue.
-- **Limit controls**: per-provider warn or hard-limit mode, adjustable thresholds, reset notifications, and a metadata-only 30-day event history capped at 1,000 events / 256 KiB. Pauses clear automatically at reset; an idle chat still needs its host to run it.
+- Optional **conversation hooks** (see [INSTALL.md](INSTALL.md#conversation-hooks)): near a reported usage limit, supported Claude Code or Codex hook events stop for that window, when their quota is reported; same-chat resumption is supported after reset; when its context passes 60%, it is asked to condense and continue.
+- **Settings** groups providers, data sources, limit controls, appearance, notifications and dashboard defaults. Each provider has a warning percentage, a **5-hour hard limit (% used)**, and a **Weekly reserve (% remaining)**. A 3% weekly reserve stops work at 97% weekly usage. Either hard condition stops supported hook events; resetting one window does not clear the other. Warnings appear on the page and, with Alerts on, as desktop notifications. Event history retains metadata only, capped at 30 days, 1,000 events and 256 KiB.
 
 - **Updates.** When a new version is out, the dashboard asks whether to update. **Update now** downloads it, checks it, installs it and reloads the page; **Not now** skips that version. Untick **Notify me about future updates** to stop asking; the link at the bottom right turns it back on. See [INSTALL.md](INSTALL.md#updates).
 
@@ -88,7 +90,7 @@ Screenshots use synthetic demo data (`python3 docs/screenshots/demo.py` serves i
 
 - Only chats saved on this computer appear. Chats on claude.ai or chatgpt.com don't.
 - Claude Code doesn't record the size of its context window. Token Observatory assumes 1M tokens for the models Claude Code documents as 1M by default (Opus 4.7 and later, Sonnet 5 and later, Haiku 5.5); you can set other models yourself (see [INSTALL.md](INSTALL.md#claude-context-window)).
-- Cost is an estimate at list API prices, not a bill: subscription plans, discounts and batch pricing aren't modelled, and OpenAI prices in `prices.json` are partly estimated. You can correct any price in `config.json`.
+- Cost is an estimate at standard API list prices, not a bill: subscription plans, discounts, service-tier premiums and batch pricing aren't modelled. OpenAI rates use the published 272K input threshold. OpenAI cache-write retention is unavailable in these logs, so those write components use $0*. Local $0 excludes hardware and electricity costs. You can override prices in `config.json`.
 - Values a tool doesn't record are shown as "Unreported", never guessed.
 
 ## More

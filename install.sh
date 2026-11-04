@@ -1,51 +1,68 @@
 #!/bin/sh
-# Install Token Observatory for the current user. No root, no packages.
-# macOS: builds ~/Applications/Token Observatory.app.
-# Linux: copies the dashboard to $XDG_DATA_HOME/token-observatory/app, adds
-# ~/.local/bin/token-observatory and a desktop menu entry.
+# Install the package and its private dependencies for the current user.
 set -eu
-
 root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-platform="${TOKEN_OBSERVATORY_PLATFORM:-$(uname -s)}"
-
-command -v python3 >/dev/null 2>&1 || { echo "Python 3.9 or later is required (python3 not found)." >&2; exit 1; }
-python3 -c 'import sys; sys.exit(sys.version_info < (3, 9))' ||
-  { echo "Python 3.9 or later is required (found $(python3 --version 2>&1))." >&2; exit 1; }
-
-case "$platform" in
+python="${TOKEN_OBSERVATORY_PYTHON:-python3}"
+command -v "$python" >/dev/null 2>&1 || { echo 'Python 3.10 or later is required.' >&2; exit 1; }
+"$python" -c 'import sys; sys.exit(sys.version_info < (3, 10))' || { echo 'Python 3.10 or later is required. Set TOKEN_OBSERVATORY_PYTHON to a suitable interpreter.' >&2; exit 1; }
+python=$("$python" -c 'import os, sys; print(os.path.realpath(sys._base_executable))')
+case "${TOKEN_OBSERVATORY_PLATFORM:-$(uname -s)}" in
   Darwin)
-    python3 "$root/build_app.py"
-    echo "Open Token Observatory from ~/Applications, or run: open \"$HOME/Applications/Token Observatory.app\""
+    "$python" "$root/build_app.py"
     ;;
   Linux|linux)
     data="${XDG_DATA_HOME:-$HOME/.local/share}"
     app="$data/token-observatory/app"
     bin="$HOME/.local/bin"
-    # Replace the previous copy so removed modules do not linger.
-    rm -rf "$app"
-    mkdir -p "$app" "$bin" "$data/applications"
-    for file in "$root"/*.py; do
-      case "${file##*/}" in test_*|build_app.py) continue ;; esac
-      cp "$file" "$app/"
-    done
-    cp "$root/index.html" "$root/app.js" "$root/insights.js" "$root/updates.js" "$root/setup.js" "$root/theme.js" "$root/style.css" "$root/logo.svg" "$root/prices.json" "$app/"
+    static="$root/frontend/dist"
+    if [ ! -f "$static/index.html" ]; then static="$root/backend/static"; fi
+    if [ -e "$root/.git" ] || [ ! -f "$static/index.html" ]; then
+      (cd "$root/frontend" && npm ci && npm run build)
+      static="$root/frontend/dist"
+    fi
+    mkdir -p "$data/token-observatory" "$bin" "$data/applications"
+    stage=$(mktemp -d "$data/token-observatory/.install-XXXXXX")
+    trap 'rm -rf "$stage"' EXIT HUP INT TERM
+    "$python" - "$root/backend" "$stage/backend" <<'PY'
+from pathlib import Path
+import shutil
+import sys
+shutil.copytree(sys.argv[1], sys.argv[2],
+                ignore=shutil.ignore_patterns('__pycache__', '*.pyc', 'static'))
+PY
+    cp -R "$static" "$stage/backend/static"
+    cp "$root/launcher.py" "$root/pyproject.toml" "$root/logo.svg" "$stage/"
+    "$python" -m venv --copies "$stage/.venv"
+    "$stage/.venv/bin/python" -m pip install "$stage"
+    "$python" - "$stage" <<'PY'
+from pathlib import Path
+import shutil
+import sys
+root = Path(sys.argv[1])
+for generated in [root / 'build', *root.glob('*.egg-info')]:
+    if generated.is_dir():
+        shutil.rmtree(generated)
+PY
+    previous="$app.previous.$$"
+    if [ -d "$app" ]; then mv "$app" "$previous"; fi
+    if ! mv "$stage" "$app"; then
+      if [ -d "$previous" ]; then mv "$previous" "$app"; fi
+      exit 1
+    fi
+    if [ -d "$previous" ]; then rm -rf "$previous"; fi
+    trap - EXIT HUP INT TERM
     cp "$root/scripts/token-observatory" "$bin/token-observatory"
-    chmod 755 "$bin/token-observatory"
+    chmod +x "$bin/token-observatory"
     cat > "$data/applications/token-observatory.desktop" <<DESKTOP
 [Desktop Entry]
 Type=Application
 Name=Token Observatory
-Comment=Local token usage dashboard for Claude Code, Codex and local LLMs
 Exec=$bin/token-observatory
 Icon=$app/logo.svg
 Terminal=false
 Categories=Development;Utility;
 DESKTOP
     echo "Installed: $bin/token-observatory"
-    case ":$PATH:" in *":$bin:"*) ;; *) echo "Add $bin to your PATH to run token-observatory by name." ;; esac
     ;;
-  *)
-    echo "Unsupported platform: $platform. Run 'python3 server.py' from this folder instead." >&2
-    exit 1
-    ;;
+  *) echo 'Unsupported platform.' >&2; exit 1 ;;
 esac

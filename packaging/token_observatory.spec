@@ -5,12 +5,12 @@ import sys
 from pathlib import Path
 
 root = Path(SPECPATH).parent
-version = re.search(r"^VERSION = '([^']+)'", (root / 'launcher.py').read_text(), re.M).group(1)
-assets = [(str(root / name), '.') for name in ('index.html', 'app.js', 'insights.js', 'updates.js', 'setup.js', 'theme.js', 'style.css', 'logo.svg', 'prices.json')]
+version = re.search(r"^VERSION = '([^']+)'", (root / 'backend/version.py').read_text(), re.M).group(1)
+assets = [(str(root / 'backend/static'), 'backend/static'), (str(root / 'backend/data'), 'backend/data')]
 icon = {'darwin': 'logo.icns', 'win32': 'logo.ico'}.get(sys.platform)
 icon = str(root / 'packaging' / icon) if icon else None
 
-a = Analysis([str(root / 'launcher.py')], pathex=[str(root)], datas=assets, hiddenimports=['server'])
+a = Analysis([str(root / 'launcher.py')], pathex=[str(root)], datas=assets, hiddenimports=['backend.launcher', 'backend.app'])
 pyz = PYZ(a.pure)
 
 if sys.platform == 'darwin':

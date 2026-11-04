@@ -1,39 +1,45 @@
 # Contributing
 
-Thanks for helping. Token Observatory stays small on purpose: one Python process and three static files, with no dependencies.
+Token Observatory has a Flask and Pydantic backend and a React 18 frontend written in TypeScript.
 
 ## Ground rules
 
-- **Standard library only.** No pip packages and no frontend build step. Python 3.9 is the floor (macOS Command Line Tools ship 3.9).
-- **Read-only and local.** Never write to Claude Code or Codex files except through the opt-in `--install-*` commands. The server and the local LLM pass-throughs listen on `127.0.0.1` only. Don't add network calls beyond the documented optional ones (price list, update check).
-- **No estimates presented as measurements.** If a log doesn't record a value, show it as unreported. Don't infer it from character counts, model names or price lists.
-- **Privacy.** Saved history and exports must exclude prompts, responses and credentials. The only prompt text kept is a local LLM chat's title: the first 60 characters of its first message.
-
-## Layout
-
-See [DEVELOPMENT.md](DEVELOPMENT.md#repository-layout) for the repository layout, how the numbers are calculated, and how to build and release.
+- Keep telemetry local. Bind the dashboard and pass-through proxies to 127.0.0.1. Preserve Host, Origin, JSON body-size and response-header protections.
+- Read source logs without changing them. Only explicit install/uninstall commands may modify Claude Code or Codex settings.
+- Keep prompts, responses and credentials out of normalized history and exports. Local proxy titles retain only the first 60 characters of the first user message.
+- Show missing measurements as unreported. Reasoning is included in output tokens and must not be counted twice. Preserve response deduplication and subagent grouping.
+- MiniMax tracking reads local logs and its native read-only SQLite ledger. Do not add automatic remote quota calls or API-key controls.
+- Preserve recorded history when a provider is disabled. Provider choices control live services.
 
 ## Development
 
-Run the server from the checkout and reload the browser after editing:
+Use Python 3.10 or later and Node.js 20 or later:
 
 ```sh
-python3 server.py --port 8766
+python3 -m venv .venv
+.venv/bin/python -m pip install -e '.[test]'
+cd frontend
+npm ci
+npm run dev
 ```
 
-Run the tests before opening a pull request:
+In a second terminal at the repository root, start the API on the port used by the Vite proxy:
 
 ```sh
-python3 -m unittest
-node test_app.js
+.venv/bin/python launcher.py --serve --port 8766
 ```
 
-`node test_app.js` needs Node.js 18 or later. It's used only for tests; the app itself never needs Node.
+Before submitting a change:
 
-When you change parsing, add a test with a small synthetic log line next to the existing ones in `test_server.py` or `test_codex_usage.py`. Never commit real session logs: they contain prompts and file paths. `.gitignore` already excludes `*.jsonl` and `*.json`.
+```sh
+.venv/bin/python -m pytest
+cd frontend
+npm test -- --run
+npm run build
+```
+
+Backend tests live in tests/ and use synthetic logs and temporary data folders. Frontend tests live beside their modules. Never commit personal telemetry or credentials. Keep tests isolated from real provider commands and personal history.
 
 ## Pull requests
 
-- Keep changes focused. Use one pull request per fix or feature.
-- Use conventional commit prefixes: `feat:`, `fix:`, `docs:`, `test:`, `refactor:`, `chore:`.
-- If a change affects what a number means, describe it in the pull request and update the "Accounting" section of `DEVELOPMENT.md` and add a line to `CHANGELOG.md`.
+Keep changes focused. Use conventional commit prefixes. Explain accounting changes with a small before/after example and update DEVELOPMENT.md and CHANGELOG.md when behavior changes. See DEVELOPMENT.md for packaging and deployment commands.

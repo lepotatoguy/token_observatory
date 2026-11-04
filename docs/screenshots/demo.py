@@ -4,7 +4,7 @@
     python3 docs/screenshots/demo.py [--port 8799]
 
 Writes synthetic Claude Code and Codex logs, local LLM usage, provider settings and usage limits into a
-temporary folder, then runs server.py on them. Live limit checks return the demo limits instead of asking
+temporary folder, then runs the Flask application on them. Live limit checks return the demo limits instead of asking
 Claude Code or Codex, and price and update downloads are off. Nothing reads or changes your real logs.
 """
 import argparse
@@ -82,7 +82,7 @@ def write_codex(home, now, rng):
 
 
 def write_local(data, now, rng):
-    import local_proxy
+    from backend.parsers import local_proxy
     recorder = local_proxy.Recorder(data / 'local-usage.jsonl')
     for tool, model, first in LOCAL_CHATS:
         conversation, title = local_proxy.chat_identity(json.dumps(dict(model=model, messages=[dict(role='user', content=first)])).encode())
@@ -117,19 +117,27 @@ def main():
     write_codex(codex, now, rng)
     write_local(data, now, rng)
     (data / 'providers.json').write_text(json.dumps(dict(setup_done=True, enabled={p: True for p in ('claude', 'codex', 'ollama', 'lmstudio', 'llamacpp')})))
-    os.environ.update(TOKEN_OBSERVATORY_PRICE_UPDATES='0', TOKEN_OBSERVATORY_UPDATE_CHECKS='0', HOME=str(folder))
-    import server
-    # The Store's live check is a default argument, so swap it there.
-    defaults = server.Store.__init__.__defaults__
-    server.Store.__init__.__defaults__ = tuple(fake_check if callable(d) else d for d in defaults)
-    # Show the local LLM pass-throughs as running without opening their ports, which a real install may be using.
-    server.apply_proxies = lambda _server: None
-    server.local_proxy.reachable = lambda port, timeout=0.3: True
-    server.providers.detect.__defaults__ = (server.local_proxy.reachable,)
-    server.local_proxy.Proxies.status = lambda self: {t: dict(listening=True, error=None, port=i['listen']) for t, i in server.local_proxy.TOOLS.items()}
-    print(f'Demo data in {folder}', flush=True)
-    sys.argv = [sys.argv[0], '--port', str(args.port), '--claude-home', str(claude), '--codex-home', str(codex), '--data-dir', str(data / 'history')]
-    server.main()
+    os.environ.update(TOKEN_OBSERVATORY_PRICE_UPDATES='0', TOKEN_OBSERVATORY_UPDATE_CHECKS='0', HOME=str(folder), MINIMAX_DATA_DIR=str(folder / '.minimax'), MAVIS_DATA_DIR=str(folder / '.minimax'))
+    from backend.app import create_app
+    from backend.config import Config
+    from backend.api import routes
+    from werkzeug.serving import make_server
+    app = create_app(Config(PORT=args.port, CODEX_HOME=codex, CLAUDE_HOME=claude,
+                            DATA_DIR=data / 'history', LIVE_CHECKS=False, UPDATE_CHECKS=False))
+    store = app.extensions['store']
+    store.live_check = demo_check
+    store.live = demo_check({}, str(folder))
+    store.detected = {tool: 'Synthetic demo' for tool in routes.providers.ALL}
+    routes.providers.detect = lambda *args, **kwargs: store.detected
+    routes.local_proxy.reachable = lambda *args, **kwargs: False
+    app.extensions['proxies'].apply = lambda *args, **kwargs: None
+    app.extensions['proxies'].status = lambda: {tool: dict(listening=True, error=None, **info)
+                                               for tool, info in routes.local_proxy.TOOLS.items()}
+    try:
+        make_server('127.0.0.1', args.port, app, threaded=True).serve_forever()
+    except KeyboardInterrupt:
+        store.read(force_save=True)
+
 
 
 if __name__ == '__main__':
