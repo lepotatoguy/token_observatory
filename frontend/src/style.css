@@ -63,3 +63,7 @@
 .stats-bar-row{min-width:0}.stats-bar-row span[title]{min-width:0}#statsPage .metric{min-width:0;overflow-wrap:anywhere}
 .stats-facts{margin:0;padding:0 22px 22px;display:grid;gap:12px}.stats-facts>div{display:flex;justify-content:space-between;gap:18px;border-bottom:1px solid var(--line);padding-bottom:9px;font-size:11px}.stats-facts dt{color:var(--muted);flex:1}.stats-facts dd{margin:0;text-align:right;font-variant-numeric:tabular-nums;max-width:65%;overflow-wrap:anywhere}.stats-detail-table{overflow:auto;max-height:480px;margin:0 22px 22px}.stats-detail-table table{width:100%;font-size:11px}.stats-detail-table td{white-space:nowrap}.stats-detail-table th{position:sticky;top:0;background:var(--paper)}.stats-detail-table td:first-child{max-width:300px;overflow:hidden;text-overflow:ellipsis}
 @media(max-width:760px){.stats-facts{padding-inline:16px}.stats-facts>div{gap:10px}.stats-detail-table{margin-inline:16px}}
+
+.quota-fields{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:12px;margin:12px 0}
+.quota-fields label{display:grid;gap:6px;min-width:0}
+.quota-fields input,.quota-fields select{width:100%;box-sizing:border-box}

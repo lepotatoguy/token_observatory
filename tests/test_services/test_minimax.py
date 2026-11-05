@@ -43,6 +43,84 @@ class MiniMaxTests(unittest.TestCase):
         env.start()
         self.addCleanup(env.stop)
 
+    def native_login(self, region='en', **changes):
+        from backend.services import minimax_code
+        folder = minimax_code.home() / 'auth' / 'prod' / region / 'mcode-public'
+        folder.mkdir(parents=True, exist_ok=True)
+        state = dict(schemaVersion=2, status='authenticated', storeKind='file',
+                     clientId='mcode-public', audience='agent-backend', region=region, generation=2)
+        row = dict(schemaVersion=1, clientId='mcode-public', audience='agent-backend',
+                   generation=2, accessToken='synthetic-native-token', expiresAtMs=(NOW+3600)*1000)
+        row.update(changes)
+        (folder/'auth-state.json').write_text(json.dumps(state))
+        (folder/'auth.json').write_text(json.dumps(dict(schemaVersion=1, records={'test': row})))
+        return folder
+
+    def test_native_login_quota_is_read_only_and_uses_login_endpoint(self):
+        folder = self.native_login()
+        before = {p.name: p.read_bytes() for p in folder.iterdir()}
+        opener = MagicMock()
+        opener.open.return_value.__enter__.return_value.read.return_value = json.dumps(quota()).encode()
+        with patch.object(minimax.time, 'time', return_value=NOW), patch.object(
+                minimax.urllib.request, 'build_opener', return_value=opener):
+            self.assertEqual(minimax.status(folder.parent.parent.parent.parent), dict(configured=True, region='global'))
+            result, error = minimax.usage(folder.parent.parent.parent.parent)
+        self.assertIsNone(error)
+        self.assertEqual(result['primary']['used_percent'], 95)
+        request = opener.open.call_args.args[0]
+        self.assertEqual(request.full_url, 'https://platform.minimax.io/v1/api/openplatform/coding_plan/remains')
+        self.assertEqual(request.get_header('Authorization'), 'Bearer synthetic-native-token')
+        self.assertEqual(before, {p.name: p.read_bytes() for p in folder.iterdir()})
+
+    def test_expired_or_mismatched_native_login_is_not_sent(self):
+        for change in [dict(expiresAtMs=(NOW-1)*1000), dict(audience='other'), dict(generation=1),
+                       dict(accessToken='bad\ntoken')]:
+            self.native_login(**change)
+            with patch.object(minimax.time, 'time', return_value=NOW), patch.object(
+                    minimax.urllib.request, 'build_opener') as opener:
+                result, error = minimax.usage(Path(os.environ['MINIMAX_DATA_DIR']))
+            self.assertIsNone(result)
+            self.assertTrue(error)
+            opener.assert_not_called()
+
+    def test_native_login_refuses_ambiguous_accounts_and_unsupported_state(self):
+        folder = self.native_login()
+        self.native_login('cn')
+        with patch.object(minimax.time, 'time', return_value=NOW):
+            self.assertEqual(minimax.native_credentials(), ('', 'global'))
+            (folder/'auth-state.json').write_text(json.dumps(dict(schemaVersion=99)))
+            self.assertEqual(minimax.native_credentials(), ('synthetic-native-token', 'cn'))
+
+    def test_refresh_includes_minimax_and_preserves_last_good_quota(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            settings = providers.Settings(None)
+            settings.update(dict(enabled={p: p == 'minimax' for p in providers.ALL}))
+            live_file = root/'live-limits.json'
+            store = Store(root/'codex', root/'claude', data_dir=root/'history', settings=settings,
+                          live_file=live_file, live_check=lambda tools, cwd: dict(claude=None, codex=None, errors={}, checked_at=minimax.time.time()),
+                          lmstudio_folder=root/'lmstudio')
+            q = minimax.parse_quota(quota(), NOW)
+            with patch.object(minimax, 'usage', return_value=(q, None)) as remote:
+                result = store.refresh_live()
+                self.assertEqual(result['limits']['minimax'], q)
+                store.refresh_live()
+                remote.assert_called_once()
+            restored = Store(root/'codex', root/'claude', data_dir=root/'history', settings=settings,
+                             live_file=live_file, lmstudio_folder=root/'lmstudio')
+            self.assertEqual(restored.read()['limits']['minimax'], q)
+            store.live['checked_at'] = 0
+            with patch.object(minimax, 'usage', return_value=(None, 'Quota check failed')):
+                result = store.refresh_live()
+            self.assertEqual(result['limits']['minimax'], q)
+            self.assertEqual(result['live_limits']['errors']['minimax'], 'Quota check failed')
+            settings.update(dict(enabled=dict(minimax=False)))
+            store.live['checked_at'] = 0
+            with patch.object(minimax, 'usage') as remote:
+                result = store.refresh_live()
+            remote.assert_not_called()
+            self.assertNotIn('minimax', result['limits'])
+
     def test_remaining_quota_and_independent_resets(self):
         result = minimax.parse_quota(quota(), NOW)
         self.assertEqual(result['primary']['used_percent'], 95)

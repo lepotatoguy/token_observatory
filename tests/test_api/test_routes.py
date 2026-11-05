@@ -269,3 +269,19 @@ def test_health_rejects_wrong_contract(monkeypatch, value):
     from io import BytesIO
     monkeypatch.setattr(launcher.LOCAL, 'open', lambda *a, **k: BytesIO(value))
     assert not launcher.healthy('http://127.0.0.1:8766')
+
+
+def test_minimax_provider_key_is_private_and_removable(client, app, monkeypatch, tmp_path):
+    monkeypatch.setenv('MINIMAX_API_KEY', '')
+    monkeypatch.setenv('MINIMAX_DATA_DIR', str(tmp_path/'native'))
+    app.extensions['proxies'].apply = Mock()
+    store = app.extensions['store']
+    store.live = {'minimax': {'primary': {'used_percent': 42}}}
+    response = client.post('/api/providers', json={'minimax': {'api_key': 'synthetic-secret-key', 'region': 'cn'}})
+    assert response.status_code == 200
+    assert response.json['minimax'] == {'configured': True, 'region': 'cn'}
+    assert 'synthetic-secret-key' not in response.get_data(as_text=True)
+    assert 'minimax' not in store.live
+    response = client.post('/api/providers', json={'minimax': {'api_key': None}})
+    assert response.status_code == 200
+    assert response.json['minimax']['configured'] is False

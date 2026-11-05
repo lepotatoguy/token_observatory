@@ -39,8 +39,6 @@ class Store:
         self.claude_limits_file = claude_limits_file
         self.live_file, self.live_tools, self.live_check = live_file, live_tools, live_check
         self.live = claude_statusline.read_json(live_file) if live_file else {}
-        self.live.pop('minimax', None)
-        self.live.get('errors', {}).pop('minimax', None)
         self.live_lock = threading.Lock()
         self.logs = {}
         self.lock = threading.Lock()
@@ -126,7 +124,7 @@ class Store:
             return self.snapshot
 
     def refresh_live(self):
-        """Ask Claude Code and Codex for current limits, then rescan. Failed checks keep the last good answer."""
+        """Refresh enabled account limits, then rescan. Failed checks keep the last good answer."""
         with self.live_lock:
             if time.time() - (self.live.get('checked_at') or 0) >= LIVE_REUSE_SECONDS:
                 enabled = self.settings.enabled(self.detected)
@@ -134,8 +132,11 @@ class Store:
                 tools = {name: path for name, path in tools.items() if name in enabled}
                 folder = Path(self.live_file).parent if self.live_file else Path.home()
                 found = self.live_check(tools, str(folder if folder.is_dir() else Path.home()))
-                self.live = dict(found, **{p: found[p] or self.live.get(p) for p in ('claude', 'codex')})
-                self.live.get('errors', {}).pop('minimax', None)
+                if 'minimax' in enabled:
+                    found['minimax'], error = minimax.usage(self.limit_control.folder or minimax.DEFAULT_DATA)
+                    if error:
+                        found.setdefault('errors', {})['minimax'] = error
+                self.live = dict(found, **{p: found.get(p) or self.live.get(p) for p in ('claude', 'codex', 'minimax')})
                 if self.live_file:
                     claude_statusline.write_json(self.live_file, self.live)
         self.scanned = float('-inf')
@@ -143,6 +144,8 @@ class Store:
 
     def limits(self, logs, sessions):
         result = latest_limits(sessions)
+        if self.live.get('minimax'):
+            result['minimax'] = self.live['minimax']
         codex = self.live.get('codex')
         if codex and codex.get('observed_at', 0) >= result.get('codex', {}).get('observed_at', 0):
             result['codex'] = codex

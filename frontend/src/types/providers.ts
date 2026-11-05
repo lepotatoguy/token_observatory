@@ -21,6 +21,7 @@ export interface ProviderSettings {
   ports: Record<string, { listen: number; target: number }>;
 }
 export interface ProviderChoice {
+  minimax?: { api_key?: string | null; region?: string };
   enabled: Record<string, boolean>;
   ports: Record<string, { listen: number; target: number }>;
   setup_done: boolean;

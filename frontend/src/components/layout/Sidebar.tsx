@@ -48,7 +48,7 @@ export function Sidebar() {
         <p>
           Your logs. Your machine.
           <br />
-          No uploads or API keys.
+          Usage records stay local.
         </p>
       </div>
       <div className="sidebar-bottom">

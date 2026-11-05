@@ -1,4 +1,4 @@
-"""Opt-in MiniMax Coding Plan quota and attribution of locally recorded model usage."""
+"""MiniMax account quota and attribution of locally recorded model usage."""
 import json
 import math
 import os
@@ -13,6 +13,8 @@ from backend.services.claude_statusline import read_json
 
 ENDPOINTS = {'global': 'https://www.minimax.io/v1/token_plan/remains',
              'cn': 'https://www.minimaxi.com/v1/token_plan/remains'}
+LOGIN_ENDPOINTS = {'global': 'https://platform.minimax.io/v1/api/openplatform/coding_plan/remains',
+                   'cn': 'https://www.minimaxi.com/v1/api/openplatform/coding_plan/remains'}
 
 
 def model_is_minimax(model):
@@ -44,8 +46,44 @@ def credentials(folder=DEFAULT_DATA):
     return key if isinstance(key, str) else '', saved.get('region') if saved.get('region') in ('global', 'cn') else 'global'
 
 
+def native_credentials():
+    """Read a matching production file login; MiniMax Code owns token renewal."""
+    from backend.services.minimax_code import home
+    found = []
+    for region in ('en', 'cn'):
+        folder = home() / 'auth' / 'prod' / region / 'mcode-public'
+        state = read_json(folder / 'auth-state.json')
+        if (state.get('schemaVersion') not in (1, 2) or state.get('status') != 'authenticated'
+                or state.get('storeKind') != 'file' or state.get('region') != region
+                or state.get('clientId') != 'mcode-public' or state.get('audience') != 'agent-backend'
+                or state.get('buildEnv', 'prod') != 'prod'
+                or type(state.get('generation')) is not int or state['generation'] < 0):
+            continue
+        saved = read_json(folder / 'auth.json')
+        records = saved.get('records')
+        if saved.get('schemaVersion') != 1 or not isinstance(records, dict):
+            continue
+        for row in records.values():
+            if not isinstance(row, dict):
+                continue
+            token, expiry = row.get('accessToken'), row.get('expiresAtMs')
+            if (row.get('schemaVersion') == 1 and row.get('clientId') == 'mcode-public'
+                    and row.get('audience') == 'agent-backend'
+                    and row.get('generation') == state.get('generation')
+                    and numeric(expiry) and expiry > time.time() * 1000
+                    and isinstance(token, str) and token and len(token) <= 8192
+                    and not any(c.isspace() for c in token)):
+                found.append((token, 'global' if region == 'en' else 'cn'))
+    # Multiple accounts require an explicit key to avoid selecting the wrong account.
+    return found[0] if len(found) == 1 else ('', 'global')
+
+
 def status(folder=DEFAULT_DATA):
     key, region = credentials(folder)
+    if not key:
+        key, native_region = native_credentials()
+        if key:
+            region = native_region
     return dict(configured=bool(key), region=region)
 
 
@@ -126,9 +164,13 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 def usage(folder=DEFAULT_DATA, timeout=5):
     key, region = credentials(folder)
+    endpoint = ENDPOINTS[region]
     if not key:
-        return None, 'Add your Coding Plan key in Providers or set MINIMAX_API_KEY'
-    request = urllib.request.Request(ENDPOINTS.get(region, ENDPOINTS['global']),
+        key, region = native_credentials()
+        endpoint = LOGIN_ENDPOINTS[region]
+    if not key:
+        return None, 'Sign in to MiniMax Code, or add a Coding Plan API key in Providers'
+    request = urllib.request.Request(endpoint,
                                      headers={'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json'})
     try:
         with urllib.request.build_opener(NoRedirect).open(request, timeout=timeout) as response:

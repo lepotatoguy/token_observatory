@@ -12,9 +12,13 @@ export function ProvidersDialog({ firstRun = false }: { firstRun?: boolean }) {
       ports: {},
       setup_done: true,
     }),
-    [message, setMessage] = useState("");
+    [message, setMessage] = useState(""),
+    [minimaxKey, setMinimaxKey] = useState(""),
+    [minimaxRegion, setMinimaxRegion] = useState("global"),
+    [removeMinimaxKey, setRemoveMinimaxKey] = useState(false);
   useEffect(() => {
     if (!data) return;
+    setMinimaxRegion(data.minimax?.region || "global");
     setChoice({
       enabled: Object.fromEntries(
         Object.keys(data.names).map((p) => [
@@ -53,7 +57,10 @@ export function ProvidersDialog({ firstRun = false }: { firstRun?: boolean }) {
         );
         return;
       }
-    save.mutate(choice, {
+    const minimax = minimaxKey || removeMinimaxKey || minimaxRegion !== (data?.minimax?.region || "global")
+      ? { region: minimaxRegion, ...(removeMinimaxKey ? { api_key: null } : minimaxKey ? { api_key: minimaxKey } : {}) }
+      : undefined;
+    save.mutate({ ...choice, ...(minimax ? { minimax } : {}) }, {
       onSuccess: (status) => {
         const problems = Object.entries(status.local).filter(
           ([p, v]) => status.enabled.includes(p) && v.error,
@@ -190,6 +197,31 @@ export function ProvidersDialog({ firstRun = false }: { firstRun?: boolean }) {
                     </span>
                   )}
                 </div>
+                {p === "minimax" && choice.enabled[p] && (
+                  <details>
+                    <summary>Account quota</summary>
+                    <p>Uses your signed-in MiniMax Code account automatically. You can also use a Coding Plan API key. Quota checks contact MiniMax; local usage is counted separately.</p>
+                    <p>{data.minimax?.configured ? "Quota credentials found" : "Sign in to MiniMax Code or add a Coding Plan API key"}</p>
+                    <div className="quota-fields">
+                    <label>
+                      MiniMax Coding Plan API key
+                      <input type="password" autoComplete="off" value={minimaxKey}
+                        placeholder="Leave blank to keep the current key"
+                        onChange={(e) => { setMinimaxKey(e.target.value); setRemoveMinimaxKey(false); }} />
+                    </label>
+                    <label>
+                      MiniMax API region
+                      <select value={minimaxRegion} onChange={(e) => setMinimaxRegion(e.target.value)}>
+                        <option value="global">Global</option>
+                        <option value="cn">China</option>
+                      </select>
+                    </label>
+                    </div>
+                    <button className="button" onClick={() => { setRemoveMinimaxKey(true); setMinimaxKey(""); }}>
+                      {removeMinimaxKey ? "Saved key will be removed" : "Remove saved API key"}
+                    </button>
+                  </details>
+                )}
               </div>
             );
           })}

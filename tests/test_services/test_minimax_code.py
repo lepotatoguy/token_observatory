@@ -91,7 +91,7 @@ class MiniMaxCodeTests(unittest.TestCase):
         self.assertEqual(len(sources), 1)
         self.assertIn('MiniMax Code: cannot read local runtime', warnings[0])
 
-    def test_local_tracking_does_not_request_remote_quota(self):
+    def test_local_tracking_and_hooks_do_not_request_remote_quota(self):
         settings = providers.Settings(None)
         settings.update(dict(enabled={p: p == 'minimax' for p in providers.ALL}))
         store = Store(self.root/'codex', self.root/'claude', settings=settings,
@@ -100,11 +100,11 @@ class MiniMaxCodeTests(unittest.TestCase):
         store.live = dict(minimax=dict(primary=dict(used_percent=90)),
                           errors=dict(minimax='Add your Coding Plan key'))
         with patch.object(minimax, 'usage', side_effect=AssertionError('Remote quota request')) as remote:
-            result = store.refresh_live()
+            result = store.read()
             self.assertEqual(session_hooks.fresh_limits('minimax', str(self.root)), {})
             remote.assert_not_called()
-        self.assertNotIn('minimax', result['limits'])
-        self.assertNotIn('minimax', result['live_limits']['errors'])
+        self.assertIn('minimax', result['limits'])
+        self.assertIn('minimax', result['live_limits']['errors'])
         self.assertEqual(len(result['sessions']), 3)
 
 

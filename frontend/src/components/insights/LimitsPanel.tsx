@@ -196,12 +196,17 @@ export function LimitsPanel({
             })}
           <p className="insight-note">
             {q.source === "live"
-              ? "Checked with the coding client"
+              ? provider === "minimax" ? "Checked with MiniMax" : "Checked with the coding client"
               : "Locally recorded quota"}{" "}
             · {relative(q.observed_at, now)}
             {q.error ? ` · ${q.error}` : ""}
           </p>
         </div>
+      ))}
+      {!historyDay && Object.entries(snapshot.live_limits?.errors || {}).map(([provider, error]) => (
+        <p className="limit-error" role="status" key={provider}>
+          {providerName(provider)}: {error}{limits[provider] ? " Showing the last recorded quota." : ""}
+        </p>
       ))}
       {!Object.keys(limits).length && (
         <p className="insight-note">
@@ -211,8 +216,7 @@ export function LimitsPanel({
       {(snapshot.providers?.enabled || []).includes("minimax") &&
         !limits.minimax && (
           <p className="insight-note">
-            MiniMax local usage is read from saved chats. Account quota is not
-            reported in these records.
+            MiniMax quota is unavailable. Sign in to MiniMax Code or add a Coding Plan API key in Providers.
           </p>
         )}
     </div>

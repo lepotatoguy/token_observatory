@@ -38,7 +38,7 @@ describe("dialogs", () => {
     expect(screen.getByText(/you have 1.0/)).toBeInTheDocument();
     expect(screen.getByText("Fixed usage collection.")).toBeInTheDocument();
   });
-  it("saves selected providers with proxy ports and no MiniMax key", async () => {
+  it("saves providers without changing existing MiniMax credentials", async () => {
     vi.spyOn(api, "providers").mockResolvedValue({
       settings: { setup_done: true, enabled: {}, ports: {} },
       names: { minimax: "MiniMax", ollama: "Ollama" },
@@ -70,7 +70,34 @@ describe("dialogs", () => {
         expect.anything(),
       ),
     );
-    expect(screen.queryByLabelText(/API key/i)).not.toBeInTheDocument();
+    expect(screen.getByLabelText("MiniMax Coding Plan API key")).toHaveValue("");
+  });
+  it("saves a MiniMax key and region without returning the saved key", async () => {
+    const status = { settings: { setup_done: true, enabled: {}, ports: {} }, names: { minimax: "MiniMax" },
+      enabled: ["minimax"], detected: {}, cloud: ["minimax"], local: {}, minimax: { configured: true, region: "global" } };
+    vi.spyOn(api, "providers").mockResolvedValue(status);
+    const save = vi.spyOn(api, "saveProviders").mockResolvedValue(status);
+    render(<ProvidersDialog />, { wrapper });
+    const key = await screen.findByLabelText("MiniMax Coding Plan API key");
+    expect(key).toHaveValue("");
+    fireEvent.change(key, { target: { value: "synthetic-plan-key" } });
+    fireEvent.change(screen.getByLabelText("MiniMax API region"), { target: { value: "cn" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({
+      minimax: { api_key: "synthetic-plan-key", region: "cn" }
+    }), expect.anything()));
+  });
+  it("removes a saved MiniMax key explicitly", async () => {
+    const status = { settings: { setup_done: true, enabled: {}, ports: {} }, names: { minimax: "MiniMax" },
+      enabled: ["minimax"], detected: {}, cloud: ["minimax"], local: {}, minimax: { configured: true, region: "global" } };
+    vi.spyOn(api, "providers").mockResolvedValue(status);
+    const save = vi.spyOn(api, "saveProviders").mockResolvedValue(status);
+    render(<ProvidersDialog />, { wrapper });
+    fireEvent.click(await screen.findByRole("button", { name: "Remove saved API key", hidden: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({
+      minimax: { api_key: null, region: "global" }
+    }), expect.anything()));
   });
   it("validates warning versus hard limit before saving", async () => {
     vi.spyOn(api, "limits").mockResolvedValue({

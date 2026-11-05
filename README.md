@@ -1,6 +1,6 @@
 # Token Observatory
 
-See token usage for Claude Code, Codex, MiniMax and local LLMs (Ollama, LM Studio, llama.cpp) in a dashboard on your computer. It reads existing local logs and counts local API requests on a pass-through port. Chat content stays local. MiniMax tracking uses local records without a plan key or remote quota requests. Optional network requests fetch published prices and software updates.
+See token usage for Claude Code, Codex, MiniMax and local LLMs (Ollama, LM Studio, llama.cpp) in a dashboard on your computer. It reads existing local logs and counts local API requests on a pass-through port. Chat content stays local. MiniMax token tracking uses local records. Account quota checks reuse an unexpired MiniMax Code file login or a Coding Plan API key configured in Providers. MiniMax Code owns login renewal; keychain logins and ambiguous multiple accounts require a Coding Plan key. Optional network requests fetch published prices and software updates.
 
 The source uses a Flask and Pydantic backend in `backend/` and a React 18, TypeScript and Vite frontend in `frontend/`. Source development needs Python 3.10 or later and Node.js 20 or later. Packaged standalone releases bundle their runtime. See [development setup](DEVELOPMENT.md).
 
