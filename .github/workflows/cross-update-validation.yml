@@ -4,7 +4,6 @@ permissions:
   contents: read
 jobs:
   linux-legacy:
-    if: false
     strategy:
       fail-fast: false
       matrix:
