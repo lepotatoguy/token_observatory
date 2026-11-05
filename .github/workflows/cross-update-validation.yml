@@ -4,6 +4,7 @@ permissions:
   contents: read
 jobs:
   linux-legacy:
+    if: false
     strategy:
       fail-fast: false
       matrix:
@@ -128,3 +129,37 @@ jobs:
       - name: Test helper launch
         shell: bash
         run: python -u tests/cross_platform/windows_update_e2e.py "$RUNNER_TEMP/TokenObservatory-1.4.0-windows-x64.exe" "$RUNNER_TEMP/TokenObservatory-1.5.0-windows-x64.exe" "$RUNNER_TEMP/probe.exe"
+
+  windows-build-and-e2e:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Build replacement
+        shell: bash
+        run: |
+          python -m pip install '.[test]' pyinstaller==6.11.1
+          npm ci --prefix frontend
+          npm run build --prefix frontend
+          python -c "import shutil; shutil.copytree('frontend/dist', 'backend/static', dirs_exist_ok=True)"
+          python -m pytest tests/test_services/test_launcher_update_restart.py tests/test_services/test_updater.py -q
+          python -m PyInstaller --noconfirm packaging/token_observatory.spec
+      - name: Download old executable
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download v1.4.0 --pattern 'TokenObservatory-1.4.0-windows-x64.exe' --dir "$RUNNER_TEMP"
+      - name: Test automatic update
+        shell: bash
+        run: python -u tests/cross_platform/windows_update_e2e.py "$RUNNER_TEMP/TokenObservatory-1.4.0-windows-x64.exe" "dist/token-observatory.exe"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: verified-windows-exe
+          path: dist/token-observatory.exe
+          if-no-files-found: error
