@@ -38,7 +38,7 @@ with tempfile.TemporaryDirectory(prefix='observatory-windows-upgrade-') as td:
         threading.Thread(target=server.serve_forever, daemon=True).start()
         env = dict(os.environ, TEMP=str(root / 'temp'), TMP=str(root / 'temp'), APPDATA=str(root / 'appdata'), USERPROFILE=str(root), TOKEN_OBSERVATORY_UPDATE_SERVER='http://127.0.0.1:%s' % server.server_port, TOKEN_OBSERVATORY_LIVE_CHECKS='0')
         def status():
-            with urllib.request.urlopen('http://127.0.0.1:%s/api/update' % port, timeout=2) as response: return json.load(response)
+            with urllib.request.urlopen('http://127.0.0.1:%s/api/update' % port, timeout=0.5) as response: return json.load(response)
         try:
             print('Testing new standalone executable', flush=True)
             with socket.socket() as check_sock:
@@ -59,7 +59,7 @@ with tempfile.TemporaryDirectory(prefix='observatory-windows-upgrade-') as td:
             print('Starting update', flush=True)
             req = urllib.request.Request('http://127.0.0.1:%s/api/update/install' % port, data=b'{}', headers={'Content-Type':'application/json'}, method='POST')
             urllib.request.urlopen(req, timeout=10).close()
-            for _ in range(180):
+            for _ in range(140):
                 try:
                     state = status()
                     if _ % 20 == 0: print('Update status:', state.get('current'), state.get('progress'), flush=True)
