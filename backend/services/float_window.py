@@ -5,6 +5,7 @@ operating systems. This module needs PySide6, so the launcher only imports it
 when the widget is started and the packaged app stays small without it.
 """
 import json
+import os
 import sys
 import threading
 import urllib.request
@@ -58,6 +59,7 @@ class FloatWindow(QWidget):
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint
                             | Qt.WindowType.Tool | Qt.WindowType.NoDropShadowWindowHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_MacAlwaysShowToolWindow, True)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.font_name = self._font(NAME_SIZE, QFont.Weight.DemiBold)
@@ -312,6 +314,9 @@ class FloatWindow(QWidget):
 
 def run(url, position_file=None):
     """Show the widget until it is closed. Returns an exit code."""
+    # Plain executables must stay out of the macOS Dock and app switcher.
+    if sys.platform == 'darwin':
+        os.environ['QT_MAC_DISABLE_FOREGROUND_APPLICATION_TRANSFORM'] = '1'
     app = QApplication.instance() or QApplication(sys.argv)
     app.setApplicationName('Token Observatory')
     window = FloatWindow(url, position_file=position_file)

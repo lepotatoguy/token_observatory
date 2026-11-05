@@ -98,3 +98,33 @@ def test_a_broken_position_file_is_ignored(app, tmp_path):
     path.write_text('not json')
     window = float_window.FloatWindow('http://127.0.0.1:1/api/quota', position_file=path)
     assert window.restored is False
+
+
+@pytest.mark.parametrize('platform', ['darwin', 'win32', 'linux'])
+def test_run_keeps_widget_in_background_before_creating_application(monkeypatch, platform):
+    monkeypatch.setattr(float_window.sys, 'platform', platform)
+    monkeypatch.setenv('QT_MAC_DISABLE_FOREGROUND_APPLICATION_TRANSFORM', '')
+    observed = []
+
+    class ApplicationCreated(Exception):
+        pass
+
+    class Application:
+        instance = staticmethod(lambda: None)
+
+        def __init__(self, args):
+            observed.append(os.environ.get('QT_MAC_DISABLE_FOREGROUND_APPLICATION_TRANSFORM'))
+            raise ApplicationCreated
+
+    monkeypatch.setattr(float_window, 'QApplication', Application)
+    with pytest.raises(ApplicationCreated):
+        float_window.run('http://127.0.0.1:1/api/quota')
+    assert observed == ['1' if platform == 'darwin' else '']
+
+
+def test_widget_stays_visible_without_becoming_a_foreground_app(app):
+    window = float_window.FloatWindow('http://127.0.0.1:1/api/quota')
+    try:
+        assert window.testAttribute(Qt.WidgetAttribute.WA_MacAlwaysShowToolWindow)
+    finally:
+        window.close()
