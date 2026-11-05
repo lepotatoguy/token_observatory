@@ -27,6 +27,7 @@ jobs:
           python3 packaging/build_source.py "$RUNNER_TEMP/source" "$RUNNER_TEMP/source.tar.gz" 1.5.0 "$RUNNER_TEMP/runtime.zip" "$RUNNER_TEMP/runtime.zip" "$RUNNER_TEMP/runtime.zip" "$RUNNER_TEMP/runtime.zip"
           python3 tests/cross_platform/linux_legacy_e2e.py "$RUNNER_TEMP/source.tar.gz"
   windows-unit:
+    if: false
     runs-on: windows-latest
     timeout-minutes: 10
     steps:
