@@ -216,10 +216,11 @@ def test_windows_helper_replaces_unicode_path(tmp_path):
     helper.write_text(update_install.windows_script([], 8765), encoding='ascii')
     env = dict(os.environ, TOKEN_OBSERVATORY_UPDATE_TARGET=str(target),
                TOKEN_OBSERVATORY_UPDATE_NEW=str(replacement), TOKEN_OBSERVATORY_TEST_MARKER=str(marker))
-    completed = subprocess.run(['cmd.exe', '/d', '/v:off', '/c', str(helper)], env=env, capture_output=True, timeout=20)
-    assert completed.returncode == 0, (completed.returncode, completed.stdout, completed.stderr, list(folder.iterdir()))
+    completed = subprocess.run(['cmd.exe', '/d', '/v:off', '/c', str(helper)], env=env,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=20)
     deadline = time.monotonic() + 10
     while not marker.exists() and time.monotonic() < deadline:
         time.sleep(0.1)
+    assert marker.exists(), (completed.returncode, list(folder.iterdir()))
     assert marker.read_text().strip() == 'started'
     assert target.read_text(encoding='ascii').startswith('@echo off\necho started')
