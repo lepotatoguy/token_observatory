@@ -36,6 +36,7 @@ def upgrade_if_legacy(version):
         shim = new / 'Contents/Resources/dashboard/server.py'
         shim.parent.mkdir(parents=True, exist_ok=True)
         shim.write_text("import os, sys\nfrom pathlib import Path\napp = Path(__file__).resolve().parents[3]\nexe = str(app / 'Contents/MacOS/TokenObservatory')\nos.execv(exe, [exe, '--serve', *sys.argv[1:]])\n", encoding='utf-8')
+        subprocess.run(['/usr/bin/codesign', '--force', '--sign', '-', str(new)], check=True, capture_output=True)
         previous = temporary / 'previous.app'
         os.rename(app, previous)
         try:

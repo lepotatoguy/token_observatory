@@ -21,7 +21,7 @@ def upgrade_if_legacy(root, version):
     if not old.is_file() or old.read_text(encoding='utf-8').startswith(MARKER):
         return False
     python = sys.executable
-    if sys.version_info < (3, 10):
+    if sys.version_info < (3, 12):
         arch = platform.machine().lower()
         arch = {'amd64': 'x86_64', 'arm64': 'aarch64'}.get(arch, arch)
         archive = root / ('legacy-linux-python-' + arch + '.zip')

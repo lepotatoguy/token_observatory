@@ -75,7 +75,12 @@ def test_legacy_bridge_preserves_restart_arguments(tmp_path, monkeypatch, machin
     monkeypatch.setattr(bridge.sys, 'platform', 'darwin')
     monkeypatch.setattr(bridge.platform, 'machine', lambda: machine)
     run = subprocess.run
-    monkeypatch.setattr(bridge.subprocess, 'run', lambda command, check: shutil.copytree(fixture, Path(command[-1]) / fixture.name))
+    def run_bridge(command, **kwargs):
+        if command[0] == '/usr/bin/ditto':
+            shutil.copytree(fixture, Path(command[-1]) / fixture.name)
+        else:
+            assert command[:4] == ['/usr/bin/codesign', '--force', '--sign', '-']
+    monkeypatch.setattr(bridge.subprocess, 'run', run_bridge)
     assert bridge.upgrade_if_legacy('1.5.0')
     shim = app / 'Contents/Resources/dashboard/server.py'
     run([sys.executable, str(shim), '--port', '8876', '--data-dir', str(home / 'data')], check=True)
@@ -144,3 +149,34 @@ def test_legacy_linux_rejects_unsafe_runtime_without_replacing_app(tmp_path, mon
             bridge.upgrade_if_legacy(tmp_path, '1.5.0')
     assert old.read_text() == 'original'
     assert not (tmp_path / 'data/token-observatory/outside').exists()
+
+
+@pytest.mark.parametrize('version', [(3, 9), (3, 10), (3, 11)])
+def test_legacy_linux_uses_supported_bundled_runtime(tmp_path, monkeypatch, version):
+    import importlib.util
+    import stat
+
+    spec = importlib.util.spec_from_file_location('linux_upgrade_python39', ROOT / 'packaging/legacy_linux_upgrade.py')
+    bridge = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bridge)
+    data = tmp_path / 'data'
+    app = data / 'token-observatory/app'
+    app.mkdir(parents=True)
+    (app / 'server.py').write_text('legacy server')
+    monkeypatch.setenv('XDG_DATA_HOME', str(data))
+    monkeypatch.delenv('TOKEN_OBSERVATORY_LEGACY_RUNNING', raising=False)
+    monkeypatch.setattr(bridge.platform, 'machine', lambda: 'x86_64')
+    info = zipfile.ZipInfo('bin/python3')
+    info.external_attr = (stat.S_IFREG | 0o755) << 16
+    with zipfile.ZipFile(tmp_path / 'legacy-linux-python-x86_64.zip', 'w') as archive:
+        archive.writestr(info, b'python fixture')
+    calls = []
+    def install(command, env, check):
+        calls.append(env['TOKEN_OBSERVATORY_PYTHON'])
+    monkeypatch.setattr(bridge.subprocess, 'run', install)
+    with patch.object(bridge.sys, 'platform', 'linux'), patch.object(bridge.sys, 'version_info', version):
+        assert bridge.upgrade_if_legacy(tmp_path, '1.5.0')
+    runtime = data / 'token-observatory/legacy-python-1.5.0-x86_64/bin/python3'
+    assert calls == [str(runtime)]
+    assert runtime.read_bytes() == b'python fixture'
+    assert runtime.stat().st_mode & 0o111
