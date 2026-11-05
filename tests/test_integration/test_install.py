@@ -12,6 +12,34 @@ pytestmark = pytest.mark.skipif(os.name == "nt", reason="POSIX source installer"
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def test_source_installer_uses_versioned_base_python(tmp_path):
+    source = tmp_path / 'source'
+    source.mkdir()
+    shutil.copy2(ROOT / 'install.sh', source / 'install.sh')
+    (source / 'build_app.py').write_text('')
+    base = tmp_path / 'base'
+    versioned = base / 'bin' / f'python{sys.version_info.major}.{sys.version_info.minor}'
+    versioned.parent.mkdir(parents=True)
+    marker = tmp_path / 'selected'
+    versioned.write_text(f'#!{sys.executable}\nfrom pathlib import Path\nPath({str(marker)!r}).write_text("selected")\n')
+    versioned.chmod(0o755)
+    wrapper = tmp_path / 'venv-python'
+    wrapper.write_text(
+        f'#!{sys.executable}\nimport os, sys\n'
+        f'if len(sys.argv) > 2 and sys.argv[1] == "-c" and "_base_executable" in sys.argv[2]:\n'
+        f'    sys.base_prefix = {str(base)!r}\n'
+        f'    sys._base_executable = {str(tmp_path / "unusable-python")!r}\n'
+        f'    exec(sys.argv[2])\n'
+        f'else:\n'
+        f'    os.execv({sys.executable!r}, [{sys.executable!r}, *sys.argv[1:]])\n'
+    )
+    wrapper.chmod(0o755)
+    env = dict(os.environ, TOKEN_OBSERVATORY_PLATFORM='Darwin', TOKEN_OBSERVATORY_PYTHON=str(wrapper))
+    result = subprocess.run(['/bin/sh', str(source / 'install.sh')], env=env, capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    assert marker.read_text() == 'selected'
+
+
 def fake_installer_python(path, stable=None):
     path.write_text(f'''#!{sys.executable}
 import os, pathlib, sys

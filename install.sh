@@ -5,7 +5,7 @@ root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 python="${TOKEN_OBSERVATORY_PYTHON:-python3}"
 command -v "$python" >/dev/null 2>&1 || { echo 'Python 3.10 or later is required.' >&2; exit 1; }
 "$python" -c 'import sys; sys.exit(sys.version_info < (3, 10))' || { echo 'Python 3.10 or later is required. Set TOKEN_OBSERVATORY_PYTHON to a suitable interpreter.' >&2; exit 1; }
-python=$("$python" -c 'import os, sys; print(os.path.realpath(sys._base_executable))')
+python=$("$python" -c 'import os, sys; base = os.path.join(sys.base_prefix, "bin", "python%d.%d" % sys.version_info[:2]); print(os.path.realpath(base if os.path.isfile(base) else sys._base_executable))')
 # The floating widget needs Qt; it is optional so the dashboard stays small.
 float=''
 if [ "${TOKEN_OBSERVATORY_WITH_FLOAT:-0}" = "1" ]; then float=1; fi
