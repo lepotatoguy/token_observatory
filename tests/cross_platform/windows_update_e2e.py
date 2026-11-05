@@ -27,13 +27,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
 with tempfile.TemporaryDirectory(prefix='observatory-windows-upgrade-') as td:
     root = Path(td)
+    (root / 'temp').mkdir()
     target = root / 'TokenObservatory.exe'
     shutil.copyfile(old, target)
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]
     with http.server.ThreadingHTTPServer(('127.0.0.1', 0), Handler) as server:
         threading.Thread(target=server.serve_forever, daemon=True).start()
-        env = dict(os.environ, APPDATA=str(root / 'appdata'), USERPROFILE=str(root), TOKEN_OBSERVATORY_UPDATE_SERVER='http://127.0.0.1:%s' % server.server_port, TOKEN_OBSERVATORY_LIVE_CHECKS='0')
+        env = dict(os.environ, TEMP=str(root / 'temp'), TMP=str(root / 'temp'), APPDATA=str(root / 'appdata'), USERPROFILE=str(root), TOKEN_OBSERVATORY_UPDATE_SERVER='http://127.0.0.1:%s' % server.server_port, TOKEN_OBSERVATORY_LIVE_CHECKS='0')
         def status():
             with urllib.request.urlopen('http://127.0.0.1:%s/api/update' % port, timeout=2) as response: return json.load(response)
         try:
@@ -53,6 +54,7 @@ with tempfile.TemporaryDirectory(prefix='observatory-windows-upgrade-') as td:
             for _ in range(180):
                 try:
                     state = status()
+                    if _ % 20 == 0: print('Update status:', state.get('current'), state.get('progress'), flush=True)
                     if state.get('current') == '1.5.0' and hashlib.sha256(target.read_bytes()).hexdigest() == digest:
                         print('Windows executable downloaded, verified, replaced and restarted at 1.5.0'); break
                     progress = state.get('progress') or {}
@@ -61,6 +63,9 @@ with tempfile.TemporaryDirectory(prefix='observatory-windows-upgrade-') as td:
                 time.sleep(1)
             else: raise RuntimeError('Windows update did not restart at 1.5.0')
         finally:
+            print('Files:', [str(p.relative_to(root)) for p in root.rglob('*') if p.is_file() and (p.suffix in ('.exe', '.new', '.cmd', '.old') or p.name == 'service.log')], flush=True)
+            for p in root.rglob('service.log'): print('SERVICE LOG:', p.read_text(errors='replace')[-10000:], flush=True)
+            for p in root.rglob('*.cmd'): print('HELPER:', p.read_text(errors='replace')[-5000:], flush=True)
             print('Stopping app', flush=True)
             subprocess.run([str(target), '--stop', '--port', str(port)], env=env, timeout=30, check=False)
             server.shutdown()

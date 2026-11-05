@@ -7,6 +7,9 @@ with tempfile.TemporaryDirectory(prefix='observatory-linux-upgrade-') as td:
     data = home / '.local/share/token-observatory'
     app = data / 'app'
     app.mkdir(parents=True)
+    marker = data / 'history' / 'preservation-test'
+    marker.parent.mkdir(parents=True)
+    marker.write_text('preserve user data')
     with subprocess.Popen(['git', 'archive', 'v1.4.0'], stdout=subprocess.PIPE) as git:
         with tarfile.open(fileobj=git.stdout, mode='r|') as tar:
             tar.extractall(app)
@@ -43,6 +46,7 @@ with tempfile.TemporaryDirectory(prefix='observatory-linux-upgrade-') as td:
                     proc.wait(timeout=30)
     try:
         run_until_healthy([sys.executable, str(old_server), str(source)] + args)
+        assert marker.read_text() == 'preserve user data'
         print('Legacy Python', sys.version, 'upgrade and restart passed')
         assert (app / '.venv/bin/python').is_file()
         check = "from pathlib import Path; import sys; from backend.services.update_install import kind; assert kind(False,'linux',Path(sys.argv[1]),Path(sys.argv[2])) == 'source-linux'"
@@ -51,6 +55,7 @@ with tempfile.TemporaryDirectory(prefix='observatory-linux-upgrade-') as td:
         second.write_text("import sys\nfrom pathlib import Path\nsys.path.insert(0, sys.argv[2])\nfrom backend.services import update_install\nimport subprocess\noriginal_run = subprocess.run\ndef logged_run(*args, **kwargs):\n try: return original_run(*args, **kwargs)\n except subprocess.CalledProcessError as e:\n  print('INSTALLER STDERR:', e.stderr, flush=True); print('INSTALLER STDOUT:', e.stdout, flush=True); raise\nupdate_install.subprocess.run=logged_run\napp=Path(sys.argv[2]); command=[str(app/'.venv/bin/python'),str(app/'launcher.py'),'--serve',*sys.argv[3:]]\naction, command=update_install.install_source(Path(sys.argv[1]),'1.5.0','source-linux',command)\nassert action == 'restart'\nupdate_install.restart(command)\n")
         shutil.copyfile(archive, source)
         run_until_healthy([str(app / '.venv/bin/python'), str(second), str(source), str(app)] + args)
+        assert marker.read_text() == 'preserve user data'
         print('Subsequent source upgrade and restart passed')
     except Exception:
         if logpath.exists(): print(logpath.read_text()[-10000:])
