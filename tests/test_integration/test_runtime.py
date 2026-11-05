@@ -10,6 +10,7 @@ import time
 import urllib.error
 import urllib.request
 
+from backend import launcher
 from backend.models.snapshot import UsageSnapshot
 
 
@@ -47,7 +48,7 @@ def test_real_servers_keep_usage_and_stop_by_port(tmp_path):
             process = subprocess.Popen(base_command + ["--serve", "--port", str(port)] + common,
                                        env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             processes.append(process)
-            deadline = time.monotonic() + 15
+            deadline = time.monotonic() + launcher.STARTUP_SECONDS
             while True:
                 try:
                     with LOCAL.open(f"http://127.0.0.1:{port}/api/health", timeout=1) as response:
@@ -56,7 +57,8 @@ def test_real_servers_keep_usage_and_stop_by_port(tmp_path):
                     break
                 except OSError:
                     assert process.poll() is None, (tmp_path / "service.log").read_text()
-                    assert time.monotonic() < deadline, "Server health deadline exceeded"
+                    assert time.monotonic() < deadline, (tmp_path / "service.log").read_text()
+                    time.sleep(0.05)
                     time.sleep(.05)
         for port in ports:
             url = f"http://127.0.0.1:{port}"
