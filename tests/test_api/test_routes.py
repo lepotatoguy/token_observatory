@@ -20,6 +20,20 @@ def test_usage_refresh_pricing_contract(client, app):
     assert client.get('/api/pricing').json == {'prices': {}}
 
 
+def test_quota_route_serves_the_compact_view(client, app):
+    app.extensions['store'].quota = Mock(return_value=dict(at=1.0, checked_at=2.0, providers=[], errors={}))
+    assert client.get('/api/quota').json == dict(at=1.0, checked_at=2.0, providers=[], errors={})
+
+
+def test_quota_route_reads_the_current_snapshot(client, app):
+    app.extensions['store'].read = Mock(return_value={
+        'at': 5.0, 'sessions': [], 'limits': {}, 'live_limits': {}})
+    body = client.get('/api/quota').json
+    assert body['at'] == 5.0
+    assert body['providers'] == []
+    assert body['errors'] == {}
+
+
 def test_history_validation(client, app):
     archive = app.extensions['store'].archive
     archive.load = Mock(return_value={'day': '2026-11-03'})

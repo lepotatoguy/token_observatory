@@ -2,6 +2,10 @@
 
 All notable changes to Token Observatory. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+### Added
+- A floating widget that shows every enabled account's model, 5-hour session meter and weekly meter in a small always-on-top pill on macOS, Windows and Linux. It drags to any position, opens the dashboard on a double-click and refreshes from a compact `/api/quota` endpoint. Qt is an optional `float` extra, so the dashboard and the standalone builds stay small without it.
+
 ## [1.5.0] - 2026-11-04
 ### Added
 - Flask/Pydantic backend and React 18/TypeScript dashboard, with production assets bundled into source and native releases.

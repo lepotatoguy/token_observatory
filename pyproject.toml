@@ -11,6 +11,8 @@ dependencies = ["flask>=3.1,<4", "pydantic>=2,<3", "requests>=2,<3"]
 
 [project.optional-dependencies]
 test = ["pytest>=8,<10"]
+# The floating widget draws itself with Qt, which runs the same on macOS, Windows and Linux.
+float = ["PySide6-Essentials>=6.5,<7"]
 
 [tool.setuptools.packages.find]
 include = ["backend", "backend.*"]

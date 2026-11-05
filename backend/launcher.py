@@ -155,6 +155,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description='Token Observatory: local token telemetry for Claude Code, Codex and local LLMs.')
     parser.add_argument('--port', type=int, default=int(os.environ.get('TOKEN_OBSERVATORY_PORT', 8765)))
     parser.add_argument('--no-open', action='store_true', help='start the collector without opening a browser')
+    parser.add_argument('--float', action='store_true',
+                        help='show the floating quota widget on macOS, Windows and Linux')
     parser.add_argument('--stop', action='store_true', help='stop the background collector')
     parser.add_argument('--statusline', action='store_true', help='status line mode for Claude Code: save its rate limits')
     parser.add_argument('--install-statusline', action='store_true', help="add the status line to Claude Code's settings")
@@ -218,6 +220,12 @@ def main(argv=None):
                 return 1
             time.sleep(0.2)
     say(f'Token Observatory: {url}')
+    if args.float:
+        from backend.services import float_panel
+        if not float_panel.available():
+            say(float_panel.INSTALL_HINT, error=True)
+            return 1
+        return float_panel.run(f'{url}/api/quota', position_file=DATA_FOLDER / 'float.json')
     if not args.no_open:
         webbrowser.open(url)
     return 0

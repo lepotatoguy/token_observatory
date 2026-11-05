@@ -6,9 +6,16 @@ python="${TOKEN_OBSERVATORY_PYTHON:-python3}"
 command -v "$python" >/dev/null 2>&1 || { echo 'Python 3.10 or later is required.' >&2; exit 1; }
 "$python" -c 'import sys; sys.exit(sys.version_info < (3, 10))' || { echo 'Python 3.10 or later is required. Set TOKEN_OBSERVATORY_PYTHON to a suitable interpreter.' >&2; exit 1; }
 python=$("$python" -c 'import os, sys; print(os.path.realpath(sys._base_executable))')
+# The floating widget needs Qt; it is optional so the dashboard stays small.
+float=''
+if [ "${TOKEN_OBSERVATORY_WITH_FLOAT:-0}" = "1" ]; then float=1; fi
 case "${TOKEN_OBSERVATORY_PLATFORM:-$(uname -s)}" in
   Darwin)
-    "$python" "$root/build_app.py"
+    if [ -n "$float" ]; then
+      "$python" "$root/build_app.py" --with-float
+    else
+      "$python" "$root/build_app.py"
+    fi
     ;;
   Linux|linux)
     data="${XDG_DATA_HOME:-$HOME/.local/share}"
@@ -34,6 +41,9 @@ PY
     cp "$root/launcher.py" "$root/pyproject.toml" "$root/logo.svg" "$stage/"
     "$python" -m venv --copies "$stage/.venv"
     "$stage/.venv/bin/python" -m pip install "$stage"
+    if [ -n "$float" ]; then
+      "$stage/.venv/bin/python" -m pip install "$stage[float]"
+    fi
     "$python" - "$stage" <<'PY'
 from pathlib import Path
 import shutil

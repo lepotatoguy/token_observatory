@@ -10,7 +10,17 @@ assets = [(str(root / 'backend/static'), 'backend/static'), (str(root / 'backend
 icon = {'darwin': 'logo.icns', 'win32': 'logo.ico'}.get(sys.platform)
 icon = str(root / 'packaging' / icon) if icon else None
 
-a = Analysis([str(root / 'launcher.py')], pathex=[str(root)], datas=assets, hiddenimports=['backend.launcher', 'backend.app'])
+# The floating widget is optional and needs Qt. Bundle it only when the build environment has it,
+# so a build without PySide6 stays small.
+float_imports = []
+try:
+    import PySide6  # noqa: F401
+    float_imports = ['backend.services.float_window', 'PySide6.QtCore', 'PySide6.QtGui', 'PySide6.QtWidgets']
+except ImportError:
+    pass
+
+a = Analysis([str(root / 'launcher.py')], pathex=[str(root)], datas=assets,
+              hiddenimports=['backend.launcher', 'backend.app'] + float_imports)
 pyz = PYZ(a.pure)
 
 if sys.platform == 'darwin':

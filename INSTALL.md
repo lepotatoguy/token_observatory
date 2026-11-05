@@ -85,12 +85,38 @@ Then open <http://127.0.0.1:8765>. Stop with Ctrl+C. This also works on Windows 
 | Claude Code home | `--claude-home` | `CLAUDE_CONFIG_DIR` | `~/.claude` |
 | Codex home | `--codex-home` | `CODEX_HOME` | `~/.codex` |
 | History folder | `--data-dir` | none | see the platform sections above |
+| Floating widget | `--float` | none | off |
 
 Example:
 
 ```sh
 .venv/bin/python launcher.py --serve --port 8766 --claude-home /path/to/.claude --codex-home /path/to/.codex
 ```
+
+### Floating widget
+
+A small always-on-top pill shows every enabled account's model, how much of its 5-hour and weekly quota is used, and when it resets. It floats over your other windows on macOS, Windows and Linux, and reads the same numbers as the dashboard.
+
+The widget needs Qt, which is an optional extra. Install it once:
+
+| Install | Command |
+|---|---|
+| From source | `python3 -m pip install -e '.[float]'` |
+| macOS or Linux source install | `TOKEN_OBSERVATORY_WITH_FLOAT=1 ./install.sh` |
+| macOS app bundle | `python3 build_app.py --with-float` |
+
+Then start it next to the dashboard:
+
+| Install | Command |
+|---|---|
+| macOS release app | `"/Applications/Token Observatory.app/Contents/MacOS/TokenObservatory" --float` |
+| Linux `.deb` | `token-observatory --float` |
+| Windows | `TokenObservatory-<version>-windows-x64.exe --float` |
+| From source | `python3 launcher.py --float` |
+
+`--float` starts the collector if it isn't running, then shows the pill until you close it. Drag the pill to move it; the position is remembered in the data folder. Double-click it to open the dashboard, and right-click for a menu with **Open dashboard**, **Refresh now** and **Quit**.
+
+Standalone release builds don't include the widget unless PySide6 is installed in the build environment before packaging. Without it, `--float` says so instead of failing.
 
 ### Local LLMs
 

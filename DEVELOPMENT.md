@@ -126,6 +126,19 @@ To release:
 
 `python3 build_app.py` builds the source-based macOS app in `~/Applications`, with a private environment using the selected Python 3.10 or later installation. Checkout builds regenerate the frontend; release source archives carry compiled assets. The source app still requires its base Python installation.
 
+### Floating widget
+
+The floating widget is optional and needs Qt (`pip install '.[float]'`, or `build_app.py --with-float` for the macOS app). It is a separate process started with `launcher.py --float` and reads `GET /api/quota` from the local collector every 5 seconds.
+
+| Path | Purpose |
+|---|---|
+| backend/services/quota.py | Reduces a snapshot to one row per account: model, session window, weekly window |
+| backend/services/float_model.py | Display model and palette, free of any GUI toolkit so it can be tested without a display |
+| backend/services/float_window.py | The Qt widget: the pill, its meters, dragging and the position file |
+| backend/services/float_panel.py | Entry point that reports the missing extra instead of failing |
+
+`float_window` imports PySide6 at module level and `float_panel` imports it through `importlib`, so PyInstaller leaves Qt out of a standalone build unless PySide6 is installed in the build environment. The release workflow installs it for the test run and removes it again before packaging, which keeps the published artifacts small.
+
 ## Repository layout
 
 | Path | Purpose |

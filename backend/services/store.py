@@ -10,6 +10,7 @@ from backend.parsers import local_proxy
 from backend.parsers import lmstudio as lmstudio_chats
 from backend.services.archive import Archive
 from backend.services import claude_context, claude_limits, claude_statusline, live_limits, limit_control, minimax, minimax_code, session_hooks
+from backend.services import quota as quota_service
 from backend.services import providers
 
 LIVE_REUSE_SECONDS = 10
@@ -43,6 +44,7 @@ class Store:
         self.logs = {}
         self.lock = threading.Lock()
         self.snapshot = None
+        self.quota_payload = None
         self.scanned = 0
         self.archive = Archive(data_dir) if data_dir is not None else None
 
@@ -120,8 +122,15 @@ class Store:
                 if self.snapshot['archive']['error']:
                     warnings.append(self.snapshot['archive']['error'])
             self.snapshot['limit_control'] = self.limit_control.observe({p: {r['id']: r for r in session_hooks.limit_rows(q)} for p, q in limits.items()})
+            self.quota_payload = quota_service.payload(self.snapshot)
             self.scanned = time.monotonic()
             return self.snapshot
+
+    def quota(self):
+        """A compact quota view for the floating widget; reuses the last scan."""
+        with self.lock:
+            cached = self.quota_payload
+        return cached if cached is not None else quota_service.payload(self.read())
 
     def refresh_live(self):
         """Refresh enabled account limits, then rescan. Failed checks keep the last good answer."""

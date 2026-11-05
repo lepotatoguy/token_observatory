@@ -39,6 +39,7 @@ The dashboard opens in your browser at <http://127.0.0.1:8765>. The first launch
 - A saved copy is kept for each day. Pick a date next to the time range to look back.
 - Click any day's bar in **Token activity** to see just that day. Click the date chip to go back.
 - **Usage limits** shows how much of your enabled Claude and Codex 5-hour and weekly quota you've used and when each resets. Under each limit, a forecast says when you'll reach it at your recent pace (the last hour for the 5-hour limit, the last day for the weekly one), or how full it will be when it resets. When a limit you had used at least halfway resets, the card says so, and with **Alerts** on you also get a desktop notification. **Refresh** (top right) checks enabled providers for the current numbers, and the collector also checks every 5 minutes. Opening or reloading the dashboard checks too.
+- **Floating widget** shows the same numbers for every enabled account in a small always-on-top pill on macOS, Windows and Linux: the model in use, the 5-hour session meter and the weekly meter, side by side. Drag it anywhere, double-click to open the dashboard, right-click for a menu. Start it with `launcher.py --float`; it needs the optional `float` extra (`pip install 'token-observatory[float]'`).
 - **Today's budget** compares today's tokens with a suggested daily amount that keeps you within your weekly limits. The meter has a part for each enabled provider, sized by its suggested share, with a line per provider underneath. You can also set your own target.
 - **Estimated cost** (top row) prices your tokens at published API list prices, per model. Anthropic's prices are downloaded about once a day; OpenAI and MiniMax use verified snapshots in `prices.json`. Local-provider usage counts as $0. Unreported prices count as $0* so totals stay numeric; the asterisk marks the fallback, and affected models appear in the card's tooltip. Known components still contribute when another component lacks a price.
 - **Breakdown** splits usage by model or project. Each row has a meter split into input and output; click a name to see fresh input, cache read, cache write, output and cost, and click **Other** to list the models or projects grouped there. **Trends** compares today with your recent average and shows when you use tokens most.
@@ -85,6 +86,10 @@ Screenshots use synthetic demo data (`python3 docs/screenshots/demo.py` serves i
 **Providers:** turn each tool on or off and see how to connect local servers, with live status. The same dialog opens on first run with the tools it found already ticked.
 
 ![Providers dialog listing Claude Code, Codex, Ollama, LM Studio and llama.cpp with connection steps and status](docs/screenshots/providers.jpg)
+
+**Floating widget:** every enabled account's model, 5-hour session meter and weekly meter, in one always-on-top pill.
+
+![Floating widget showing Claude Code and Codex session and weekly usage meters](docs/screenshots/float.jpg)
 
 ## Good to know
 

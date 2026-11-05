@@ -125,8 +125,8 @@ def main():
     app = create_app(Config(PORT=args.port, CODEX_HOME=codex, CLAUDE_HOME=claude,
                             DATA_DIR=data / 'history', LIVE_CHECKS=False, UPDATE_CHECKS=False))
     store = app.extensions['store']
-    store.live_check = demo_check
-    store.live = demo_check({}, str(folder))
+    store.live_check = fake_check
+    store.live = fake_check({}, str(folder))
     store.detected = {tool: 'Synthetic demo' for tool in routes.providers.ALL}
     routes.providers.detect = lambda *args, **kwargs: store.detected
     routes.local_proxy.reachable = lambda *args, **kwargs: False

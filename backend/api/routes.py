@@ -59,6 +59,12 @@ def usage():
     return jsonify(services()['store'].read())
 
 
+@blueprint.get('/quota')
+def quota():
+    """A compact quota view for the floating widget."""
+    return jsonify(services()['store'].quota())
+
+
 @blueprint.post('/refresh')
 def refresh():
     payload()
