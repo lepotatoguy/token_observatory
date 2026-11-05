@@ -1,3 +1,5 @@
+import faulthandler
+faulthandler.dump_traceback_later(150, repeat=True)
 import hashlib, http.server, json, os, shutil, socket, subprocess, sys, tempfile, threading, time, urllib.request
 from pathlib import Path
 
@@ -35,7 +37,9 @@ with tempfile.TemporaryDirectory(prefix='observatory-windows-upgrade-') as td:
         def status():
             with urllib.request.urlopen('http://127.0.0.1:%s/api/update' % port, timeout=2) as response: return json.load(response)
         try:
+            print('Starting legacy app', flush=True)
             subprocess.run([str(target), '--no-open', '--port', str(port)], env=env, timeout=90, check=True)
+            print('Waiting for update metadata', flush=True)
             for _ in range(90):
                 try:
                     state = status()
@@ -43,6 +47,7 @@ with tempfile.TemporaryDirectory(prefix='observatory-windows-upgrade-') as td:
                 except (OSError, AttributeError): pass
                 time.sleep(1)
             else: raise RuntimeError('Legacy app did not find the test release')
+            print('Starting update', flush=True)
             req = urllib.request.Request('http://127.0.0.1:%s/api/update/install' % port, data=b'{}', headers={'Content-Type':'application/json'}, method='POST')
             urllib.request.urlopen(req, timeout=10).close()
             for _ in range(180):
@@ -56,5 +61,6 @@ with tempfile.TemporaryDirectory(prefix='observatory-windows-upgrade-') as td:
                 time.sleep(1)
             else: raise RuntimeError('Windows update did not restart at 1.5.0')
         finally:
+            print('Stopping app', flush=True)
             subprocess.run([str(target), '--stop', '--port', str(port)], env=env, timeout=30, check=False)
             server.shutdown()

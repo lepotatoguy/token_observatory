@@ -48,7 +48,6 @@ jobs:
       - run: python -m pytest tests/test_services/test_updater.py tests/test_services/test_source_release_compatibility.py -q
 
   windows-end-to-end:
-    if: false
     runs-on: windows-latest
     timeout-minutes: 12
     steps:
@@ -65,9 +64,10 @@ jobs:
           gh release download v1.5.0 --pattern 'TokenObservatory-1.5.0-windows-x64.exe' --dir "$RUNNER_TEMP"
       - name: Test automatic update
         shell: bash
-        run: python tests/cross_platform/windows_update_e2e.py "$RUNNER_TEMP/TokenObservatory-1.4.0-windows-x64.exe" "$RUNNER_TEMP/TokenObservatory-1.5.0-windows-x64.exe"
+        run: python -u tests/cross_platform/windows_update_e2e.py "$RUNNER_TEMP/TokenObservatory-1.4.0-windows-x64.exe" "$RUNNER_TEMP/TokenObservatory-1.5.0-windows-x64.exe"
 
   linux-deb-end-to-end:
+    if: false
     runs-on: ubuntu-22.04
     timeout-minutes: 12
     steps:
