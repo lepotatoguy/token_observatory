@@ -151,6 +151,7 @@ def test_legacy_linux_rejects_unsafe_runtime_without_replacing_app(tmp_path, mon
     assert not (tmp_path / 'data/token-observatory/outside').exists()
 
 
+@pytest.mark.skipif(sys.platform == 'win32', reason='POSIX runtime permissions require POSIX')
 @pytest.mark.parametrize('version', [(3, 9), (3, 10), (3, 11)])
 def test_legacy_linux_uses_supported_bundled_runtime(tmp_path, monkeypatch, version):
     import importlib.util
@@ -215,7 +216,8 @@ def test_windows_helper_replaces_unicode_path(tmp_path):
     helper.write_text(update_install.windows_script([], 8765), encoding='ascii')
     env = dict(os.environ, TOKEN_OBSERVATORY_UPDATE_TARGET=str(target),
                TOKEN_OBSERVATORY_UPDATE_NEW=str(replacement), TOKEN_OBSERVATORY_TEST_MARKER=str(marker))
-    subprocess.run(['cmd.exe', '/d', '/v:off', '/c', str(helper)], env=env, check=True, timeout=20)
+    completed = subprocess.run(['cmd.exe', '/d', '/v:off', '/c', str(helper)], env=env, capture_output=True, timeout=20)
+    assert completed.returncode == 0, (completed.returncode, completed.stdout, completed.stderr, list(folder.iterdir()))
     deadline = time.monotonic() + 10
     while not marker.exists() and time.monotonic() < deadline:
         time.sleep(0.1)
