@@ -48,9 +48,8 @@ with tempfile.TemporaryDirectory(prefix='observatory-linux-upgrade-') as td:
         check = "from pathlib import Path; import sys; from backend.services.update_install import kind; assert kind(False,'linux',Path(sys.argv[1]),Path(sys.argv[2])) == 'source-linux'"
         subprocess.run([str(app / '.venv/bin/python'), '-c', check, str(app), str(data)], env=dict(env, PYTHONPATH=str(app)), check=True)
         second = home / 'second.py'
-        second.write_text("import sys\nfrom pathlib import Path\nfrom backend.services import update_install\nimport subprocess\noriginal_run = subprocess.run\ndef logged_run(*args, **kwargs):\n try: return original_run(*args, **kwargs)\n except subprocess.CalledProcessError as e:\n  print('INSTALLER STDERR:', e.stderr, flush=True); print('INSTALLER STDOUT:', e.stdout, flush=True); raise\nupdate_install.subprocess.run=logged_run\napp=Path(sys.argv[2]); command=[str(app/'.venv/bin/python'),str(app/'launcher.py'),'--serve',*sys.argv[3:]]\naction, command=update_install.install_source(Path(sys.argv[1]),'1.5.0','source-linux',command)\nassert action == 'restart'\nupdate_install.restart(command)\n")
+        second.write_text("import sys\nfrom pathlib import Path\nsys.path.insert(0, sys.argv[2])\nfrom backend.services import update_install\nimport subprocess\noriginal_run = subprocess.run\ndef logged_run(*args, **kwargs):\n try: return original_run(*args, **kwargs)\n except subprocess.CalledProcessError as e:\n  print('INSTALLER STDERR:', e.stderr, flush=True); print('INSTALLER STDOUT:', e.stdout, flush=True); raise\nupdate_install.subprocess.run=logged_run\napp=Path(sys.argv[2]); command=[str(app/'.venv/bin/python'),str(app/'launcher.py'),'--serve',*sys.argv[3:]]\naction, command=update_install.install_source(Path(sys.argv[1]),'1.5.0','source-linux',command)\nassert action == 'restart'\nupdate_install.restart(command)\n")
         shutil.copyfile(archive, source)
-        env['PYTHONPATH'] = str(app)
         run_until_healthy([str(app / '.venv/bin/python'), str(second), str(source), str(app)] + args)
         print('Subsequent source upgrade and restart passed')
     except Exception:
