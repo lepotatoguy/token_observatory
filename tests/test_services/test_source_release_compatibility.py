@@ -19,7 +19,7 @@ def test_source_release_supports_legacy_automatic_update(tmp_path):
     source.mkdir()
     (source / 'launcher.py').write_text('from backend.version import VERSION\n')
     (source / 'build_app.py').write_text('')
-    (source / 'install.sh').write_text('#!/bin/sh\nset -eu\n')
+    (source / 'install.sh').write_text("#!/bin/sh\nset -eu\n" + "python=\"$python\"\n".replace("python=\"$python\"", "python=$(\"$python\" -c 'import os, sys; print(os.path.realpath(sys._base_executable))')"))
     (source / '._metadata').write_text('macOS metadata')
     native = tmp_path / 'native.zip'
     with zipfile.ZipFile(native, 'w') as bundle:

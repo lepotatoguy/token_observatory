@@ -47,12 +47,6 @@ with tempfile.TemporaryDirectory(prefix='observatory-linux-upgrade-') as td:
         assert (app / '.venv/bin/python').is_file()
         check = "from pathlib import Path; import sys; from backend.services.update_install import kind; assert kind(False,'linux',Path(sys.argv[1]),Path(sys.argv[2])) == 'source-linux'"
         subprocess.run([str(app / '.venv/bin/python'), '-c', check, str(app), str(data)], env=dict(env, PYTHONPATH=str(app)), check=True)
-        py = str(app / '.venv/bin/python')
-        subprocess.run([py, '-c', "import sys; print('RUNTIME', sys.executable, sys._base_executable, sys.prefix, sys.base_prefix, flush=True)"], env=env, check=True)
-        probe = home / 'probe-env'
-        subprocess.run([py, '-m', 'venv', '--copies', '--without-pip', str(probe)], env=env, check=True)
-        diag = subprocess.run([str(probe / 'bin/python'), '-m', 'ensurepip', '-v'], env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-        print('ENSUREPIP', diag.returncode, diag.stdout[-6000:], flush=True)
         second = home / 'second.py'
         second.write_text("import sys\nfrom pathlib import Path\nsys.path.insert(0, sys.argv[2])\nfrom backend.services import update_install\nimport subprocess\noriginal_run = subprocess.run\ndef logged_run(*args, **kwargs):\n try: return original_run(*args, **kwargs)\n except subprocess.CalledProcessError as e:\n  print('INSTALLER STDERR:', e.stderr, flush=True); print('INSTALLER STDOUT:', e.stdout, flush=True); raise\nupdate_install.subprocess.run=logged_run\napp=Path(sys.argv[2]); command=[str(app/'.venv/bin/python'),str(app/'launcher.py'),'--serve',*sys.argv[3:]]\naction, command=update_install.install_source(Path(sys.argv[1]),'1.5.0','source-linux',command)\nassert action == 'restart'\nupdate_install.restart(command)\n")
         shutil.copyfile(archive, source)

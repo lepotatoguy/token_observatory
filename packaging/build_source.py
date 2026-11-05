@@ -18,6 +18,11 @@ def build(source, archive, version, native, intel, linux_x64, linux_arm):
     root = f'token_observatory-{version}'
     installer = source / 'install.sh'
     shell = installer.read_text(encoding='utf-8')
+    old_python = 'python=$("$python" -c \'import os, sys; print(os.path.realpath(sys._base_executable))\')'
+    new_python = 'python=$("$python" -c \'import os, sys; base = os.path.join(sys.base_prefix, "bin", "python%d.%d" % sys.version_info[:2]); print(os.path.realpath(base if os.path.isfile(base) else sys._base_executable))\')'
+    if old_python not in shell:
+        raise ValueError('source installer has no expected Python selection')
+    shell = shell.replace(old_python, new_python, 1)
     marker = 'set -eu\n'
     if shell.count(marker) != 1:
         raise ValueError('source installer does not have the expected entry point')
