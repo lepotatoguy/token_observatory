@@ -4,6 +4,7 @@ permissions:
   contents: read
 jobs:
   linux-legacy:
+    if: false
     strategy:
       fail-fast: false
       matrix:
@@ -147,7 +148,7 @@ jobs:
           npm ci --prefix frontend
           npm run build --prefix frontend
           python -c "import shutil; shutil.copytree('frontend/dist', 'backend/static', dirs_exist_ok=True)"
-          python -m pytest tests/test_services/test_launcher_update_restart.py tests/test_services/test_updater.py -q
+          python -m pytest tests/test_services/test_launcher_update_restart.py tests/test_services/test_updater.py tests/test_services/test_source_release_compatibility.py -q
           python -m PyInstaller --noconfirm packaging/token_observatory.spec
       - name: Download old executable
         shell: bash

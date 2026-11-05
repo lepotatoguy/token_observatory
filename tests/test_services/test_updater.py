@@ -346,11 +346,11 @@ class InstallTests(unittest.TestCase):
         self.assertIn('git -C', detail)
 
     def test_windows_helper_waits_replaces_and_relaunches(self):
-        script = update_install.windows_script(r'C:\Apps\to.exe', r'C:\Apps\to.exe.new', [11, 22], 8765)
+        script = update_install.windows_script([11, 22], 8765)
         self.assertIn('PID eq 11', script)
         self.assertIn('PID eq 22', script)
-        self.assertIn('move /y "C:\\Apps\\to.exe.new" "C:\\Apps\\to.exe"', script)
-        self.assertIn('start "" "C:\\Apps\\to.exe" --no-open --port 8765', script)
+        self.assertIn('move /y "%TOKEN_OBSERVATORY_UPDATE_NEW%" "%TOKEN_OBSERVATORY_UPDATE_TARGET%"', script)
+        self.assertIn('start "" "%TOKEN_OBSERVATORY_UPDATE_TARGET%" --no-open --port 8765', script)
 
 
 if __name__ == '__main__':

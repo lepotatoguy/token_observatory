@@ -180,3 +180,44 @@ def test_legacy_linux_uses_supported_bundled_runtime(tmp_path, monkeypatch, vers
     assert calls == [str(runtime)]
     assert runtime.read_bytes() == b'python fixture'
     assert runtime.stat().st_mode & 0o111
+
+
+def test_windows_update_helper_keeps_unicode_paths_in_environment(tmp_path, monkeypatch):
+    target = tmp_path / 'München' / 'TokenObservatory.exe'
+    target.parent.mkdir()
+    target.write_bytes(b'old')
+    download = tmp_path / 'download.exe'
+    download.write_bytes(b'new')
+    monkeypatch.setattr(update_install.sys, 'executable', str(target))
+    with patch.object(update_install.subprocess, 'Popen') as process:
+        assert update_install.install_windows(download, ['--port', '8765']) == ('exit', None)
+    env = process.call_args.kwargs['env']
+    assert env['TOKEN_OBSERVATORY_UPDATE_TARGET'] == str(target)
+    assert env['TOKEN_OBSERVATORY_UPDATE_NEW'] == str(target) + '.new'
+    script = Path(process.call_args.args[0][-1]).read_text(encoding='ascii')
+    assert str(target) not in script
+    assert '%TOKEN_OBSERVATORY_UPDATE_TARGET%' in script
+
+
+@pytest.mark.skipif(sys.platform != 'win32', reason='requires the Windows command interpreter')
+def test_windows_helper_replaces_unicode_path(tmp_path):
+    import os
+    import time
+
+    folder = tmp_path / 'München & 100%'
+    folder.mkdir()
+    target = folder / 'app.cmd'
+    replacement = folder / 'app.cmd.new'
+    marker = tmp_path / 'started.txt'
+    target.write_text('@echo off\r\nexit /b 1\r\n', encoding='ascii')
+    replacement.write_text('@echo off\r\necho started > "%TOKEN_OBSERVATORY_TEST_MARKER%"\r\n', encoding='ascii')
+    helper = tmp_path / 'helper.cmd'
+    helper.write_text(update_install.windows_script([], 8765), encoding='ascii')
+    env = dict(os.environ, TOKEN_OBSERVATORY_UPDATE_TARGET=str(target),
+               TOKEN_OBSERVATORY_UPDATE_NEW=str(replacement), TOKEN_OBSERVATORY_TEST_MARKER=str(marker))
+    subprocess.run(['cmd.exe', '/d', '/v:off', '/c', str(helper)], env=env, check=True, timeout=20)
+    deadline = time.monotonic() + 10
+    while not marker.exists() and time.monotonic() < deadline:
+        time.sleep(0.1)
+    assert marker.read_text().strip() == 'started'
+    assert target.read_text(encoding='ascii').startswith('@echo off\necho started')

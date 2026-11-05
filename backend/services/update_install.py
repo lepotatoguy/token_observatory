@@ -109,16 +109,16 @@ def install_macos(archive, version, command, folder):
     return 'restart', command
 
 
-def windows_script(target, new, pids, port):
+def windows_script(pids, port):
     lines = ['@echo off', 'rem Token Observatory update: wait for the old program to exit, swap in the new one, start it.',
              'setlocal', 'set tries=0', ':wait', 'set /a tries+=1', 'if %tries% gtr 120 goto replace']
     lines += [f'tasklist /fi "PID eq {pid}" /nh 2>nul | find " {pid} " >nul && goto pause' for pid in pids]
     lines += ['goto replace', ':pause', 'ping -n 2 127.0.0.1 >nul', 'goto wait',
-              ':replace', f'move /y "{target}" "{target}.old" >nul 2>&1 || goto retry',
-              f'move /y "{new}" "{target}" >nul 2>&1 || move /y "{target}.old" "{target}" >nul 2>&1',
-              f'del /f /q "{target}.old" >nul 2>&1', 'goto start',
+              ':replace', 'move /y "%TOKEN_OBSERVATORY_UPDATE_TARGET%" "%TOKEN_OBSERVATORY_UPDATE_TARGET%.old" >nul 2>&1 || goto retry',
+              'move /y "%TOKEN_OBSERVATORY_UPDATE_NEW%" "%TOKEN_OBSERVATORY_UPDATE_TARGET%" >nul 2>&1 || move /y "%TOKEN_OBSERVATORY_UPDATE_TARGET%.old" "%TOKEN_OBSERVATORY_UPDATE_TARGET%" >nul 2>&1',
+              'del /f /q "%TOKEN_OBSERVATORY_UPDATE_TARGET%.old" >nul 2>&1', 'goto start',
               ':retry', 'set /a tries+=1', 'if %tries% gtr 180 goto start', 'ping -n 2 127.0.0.1 >nul', 'goto replace',
-              ':start', f'start "" "{target}" --no-open --port {port}', 'del /f /q "%~f0" >nul 2>&1']
+              ':start', f'start "" "%TOKEN_OBSERVATORY_UPDATE_TARGET%" --no-open --port {port}', 'del /f /q "%~f0" >nul 2>&1']
     return '\r\n'.join(lines) + '\r\n'
 
 
@@ -130,11 +130,12 @@ def install_windows(download, command):
     shutil.move(str(download), str(new))
     port = command[command.index('--port') + 1] if '--port' in command else '8765'
     script = Path(tempfile.gettempdir()) / f'token-observatory-update-{os.getpid()}.cmd'
-    script.write_text(windows_script(target, new, [os.getpid(), os.getppid()], port), encoding='ascii', errors='replace')
+    script.write_text(windows_script([os.getpid(), os.getppid()], port), encoding='ascii', errors='replace')
     flags = getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0) | getattr(subprocess, 'CREATE_NO_WINDOW', 0)
-    subprocess.Popen(['cmd.exe', '/d', '/c', str(script)], creationflags=flags, close_fds=True,
+    subprocess.Popen(['cmd.exe', '/d', '/v:off', '/c', str(script)], creationflags=flags, close_fds=True,
                      stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                     env=dict(os.environ, PYINSTALLER_RESET_ENVIRONMENT='1'))
+                     env=dict(os.environ, PYINSTALLER_RESET_ENVIRONMENT='1',
+                             TOKEN_OBSERVATORY_UPDATE_TARGET=str(target), TOKEN_OBSERVATORY_UPDATE_NEW=str(new)))
     return 'exit', None
 
 
