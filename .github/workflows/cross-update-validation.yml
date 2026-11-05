@@ -111,7 +111,8 @@ jobs:
           class Probe { static void Main(string[] args) {
             string dir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
             File.AppendAllText(Path.Combine(dir, "bridge.log"), "ARGS " + String.Join(" ", args) + "\nRESET " + Environment.GetEnvironmentVariable("PYINSTALLER_RESET_ENVIRONMENT") + "\n");
-            try { var p = new Process(); p.StartInfo.FileName = Path.Combine(dir, "Standalone.exe"); p.StartInfo.Arguments = String.Join(" ", args); p.StartInfo.UseShellExecute = false; p.Start(); File.AppendAllText(Path.Combine(dir, "bridge.log"), "STARTED " + p.Id + "\n"); }
+            foreach (System.Collections.DictionaryEntry e in Environment.GetEnvironmentVariables()) { string key = e.Key.ToString(); if (key.StartsWith("_PYI") || key.StartsWith("_MEI")) File.AppendAllText(Path.Combine(dir, "bridge.log"), key + "=" + e.Value + "\n"); }
+            try { var p = new Process(); p.StartInfo.FileName = Path.Combine(dir, "Standalone.exe"); p.StartInfo.Arguments = String.Join(" ", args); p.StartInfo.UseShellExecute = false; p.Start(); File.AppendAllText(Path.Combine(dir, "bridge.log"), "STARTED " + p.Id + "\n"); if (p.WaitForExit(90000)) File.AppendAllText(Path.Combine(dir, "bridge.log"), "EXIT " + p.ExitCode + "\n"); else File.AppendAllText(Path.Combine(dir, "bridge.log"), "RUNNING\n"); }
             catch (Exception e) { File.AppendAllText(Path.Combine(dir, "bridge.log"), e.ToString()); }
           }}
           '@
