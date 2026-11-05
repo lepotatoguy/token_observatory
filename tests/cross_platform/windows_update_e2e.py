@@ -5,7 +5,7 @@ from pathlib import Path
 
 old, new = map(Path, sys.argv[1:3])
 name = 'TokenObservatory-1.5.0-windows-x64.exe'
-body = new.read_bytes()
+body = Path(sys.argv[3]).read_bytes() if len(sys.argv) > 3 else new.read_bytes()
 digest = hashlib.sha256(body).hexdigest()
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -74,6 +74,8 @@ with tempfile.TemporaryDirectory(prefix='observatory-windows-upgrade-') as td:
             for f in (target, Path(str(target) + '.old'), Path(str(target) + '.new')):
                 if f.exists(): print('FILE HASH:', f.name, hashlib.sha256(f.read_bytes()).hexdigest(), 'new:', digest, flush=True)
             print('PROCESSES:', subprocess.run(['tasklist', '/v'], text=True, capture_output=True).stdout[-16000:], flush=True)
+            marker = root / 'bridge.log'
+            if marker.exists(): print('BRIDGE LOG:', marker.read_text(errors='replace'), flush=True)
             print('Files:', [str(p.relative_to(root)) for p in root.rglob('*') if p.is_file() and (p.suffix in ('.exe', '.new', '.cmd', '.old') or p.name == 'service.log')], flush=True)
             for p in root.rglob('service.log'): print('SERVICE LOG:', p.read_text(errors='replace')[-10000:], flush=True)
             for p in root.rglob('*.cmd'): print('HELPER:', p.read_text(errors='replace')[-5000:], flush=True)

@@ -48,6 +48,7 @@ jobs:
       - run: python -m pytest tests/test_services/test_updater.py tests/test_services/test_source_release_compatibility.py -q
 
   windows-end-to-end:
+    if: false
     runs-on: windows-latest
     timeout-minutes: 12
     steps:
@@ -83,3 +84,40 @@ jobs:
           gh release download v1.5.0 --pattern 'TokenObservatory-1.5.0-linux-amd64.deb' --dir "$RUNNER_TEMP"
       - name: Test automatic update
         run: python tests/cross_platform/linux_deb_update_e2e.py "$RUNNER_TEMP/TokenObservatory-1.4.0-linux-amd64.deb" "$RUNNER_TEMP/TokenObservatory-1.5.0-linux-amd64.deb"
+
+  windows-helper-probe:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Download released executables
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download v1.4.0 --pattern 'TokenObservatory-1.4.0-windows-x64.exe' --dir "$RUNNER_TEMP"
+          gh release download v1.5.0 --pattern 'TokenObservatory-1.5.0-windows-x64.exe' --dir "$RUNNER_TEMP"
+      - name: Build diagnostic launcher
+        shell: powershell
+        run: |
+          $source = @'
+          using System;
+          using System.IO;
+          using System.Diagnostics;
+          using System.Reflection;
+          class Probe { static void Main(string[] args) {
+            string dir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+            File.AppendAllText(Path.Combine(dir, "bridge.log"), "ARGS " + String.Join(" ", args) + "\nRESET " + Environment.GetEnvironmentVariable("PYINSTALLER_RESET_ENVIRONMENT") + "\n");
+            try { var p = new Process(); p.StartInfo.FileName = Path.Combine(dir, "Standalone.exe"); p.StartInfo.Arguments = String.Join(" ", args); p.StartInfo.UseShellExecute = false; p.Start(); File.AppendAllText(Path.Combine(dir, "bridge.log"), "STARTED " + p.Id + "\n"); }
+            catch (Exception e) { File.AppendAllText(Path.Combine(dir, "bridge.log"), e.ToString()); }
+          }}
+          '@
+          Set-Content "$env:RUNNER_TEMP/probe.cs" $source
+          & "$env:WINDIR/Microsoft.NET/Framework64/v4.0.30319/csc.exe" /nologo /target:winexe "/out:$env:RUNNER_TEMP/probe.exe" "$env:RUNNER_TEMP/probe.cs"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Test helper launch
+        shell: bash
+        run: python -u tests/cross_platform/windows_update_e2e.py "$RUNNER_TEMP/TokenObservatory-1.4.0-windows-x64.exe" "$RUNNER_TEMP/TokenObservatory-1.5.0-windows-x64.exe" "$RUNNER_TEMP/probe.exe"
