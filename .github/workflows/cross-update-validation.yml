@@ -4,7 +4,6 @@ permissions:
   contents: read
 jobs:
   linux-legacy:
-    if: false
     strategy:
       fail-fast: false
       matrix:
@@ -48,6 +47,7 @@ jobs:
       - run: python -m pytest tests/test_services/test_updater.py tests/test_services/test_source_release_compatibility.py -q
 
   windows-end-to-end:
+    if: false
     runs-on: windows-latest
     timeout-minutes: 12
     steps:

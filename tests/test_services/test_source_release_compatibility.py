@@ -14,12 +14,14 @@ from backend.services import update_install
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_source_release_supports_legacy_automatic_update(tmp_path):
+@pytest.mark.parametrize('current_installer', [False, True])
+def test_source_release_supports_legacy_automatic_update(tmp_path, current_installer):
     source = tmp_path / 'source-release'
     source.mkdir()
     (source / 'launcher.py').write_text('from backend.version import VERSION\n')
     (source / 'build_app.py').write_text('')
-    (source / 'install.sh').write_text("#!/bin/sh\nset -eu\n" + "python=\"$python\"\n".replace("python=\"$python\"", "python=$(\"$python\" -c 'import os, sys; print(os.path.realpath(sys._base_executable))')"))
+    installer = (ROOT / 'install.sh').read_text() if current_installer else "#!/bin/sh\nset -eu\npython=$(\"$python\" -c 'import os, sys; print(os.path.realpath(sys._base_executable))')\n"
+    (source / 'install.sh').write_text(installer)
     (source / '._metadata').write_text('macOS metadata')
     native = tmp_path / 'native.zip'
     with zipfile.ZipFile(native, 'w') as bundle:
@@ -120,3 +122,25 @@ def test_legacy_linux_restart_keeps_arguments(tmp_path, monkeypatch):
     run([sys.executable, str(app / 'server.py'), '--port', '8876'], check=True)
     assert output.read_text().splitlines() == [str(app / 'launcher.py'), '--serve', '--port', '8876']
     assert not bridge.upgrade_if_legacy(tmp_path, '1.5.0')
+
+
+def test_legacy_linux_rejects_unsafe_runtime_without_replacing_app(tmp_path, monkeypatch):
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location('linux_upgrade_safe', ROOT / 'packaging/legacy_linux_upgrade.py')
+    bridge = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bridge)
+    app = tmp_path / 'data/token-observatory/app'
+    app.mkdir(parents=True)
+    old = app / 'server.py'
+    old.write_text('original')
+    monkeypatch.setenv('XDG_DATA_HOME', str(tmp_path / 'data'))
+    monkeypatch.delenv('TOKEN_OBSERVATORY_LEGACY_RUNNING', raising=False)
+    monkeypatch.setattr(bridge.platform, 'machine', lambda: 'x86_64')
+    with zipfile.ZipFile(tmp_path / 'legacy-linux-python-x86_64.zip', 'w') as archive:
+        archive.writestr('../outside', 'unsafe')
+    with patch.object(bridge.sys, 'platform', 'linux'), patch.object(bridge.sys, 'version_info', (3, 9)):
+        with pytest.raises(RuntimeError, match='Unsafe entry'):
+            bridge.upgrade_if_legacy(tmp_path, '1.5.0')
+    assert old.read_text() == 'original'
+    assert not (tmp_path / 'data/token-observatory/outside').exists()
