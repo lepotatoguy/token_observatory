@@ -207,11 +207,16 @@ def test_windows_helper_replaces_unicode_path(tmp_path):
 
     folder = tmp_path / 'München & 100%'
     folder.mkdir()
-    target = folder / 'app.cmd'
-    replacement = folder / 'app.cmd.new'
+    target = folder / 'app.exe'
+    replacement = folder / 'app.exe.new'
     marker = tmp_path / 'started.txt'
-    target.write_text('@echo off\r\nexit /b 1\r\n', encoding='ascii')
-    replacement.write_text('@echo off\r\necho started > "%TOKEN_OBSERVATORY_TEST_MARKER%"\r\n', encoding='ascii')
+    target.write_bytes(b'old')
+    compiler = Path(os.environ['WINDIR']) / 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
+    if not compiler.is_file():
+        pytest.skip('the Windows C# compiler is unavailable')
+    source = tmp_path / 'helper.cs'
+    source.write_text('using System; using System.IO; class P { static void Main() { File.WriteAllText(Environment.GetEnvironmentVariable("TOKEN_OBSERVATORY_TEST_MARKER"), "started"); } }', encoding='ascii')
+    subprocess.run([str(compiler), '/nologo', '/target:winexe', '/out:' + str(replacement), str(source)], check=True, timeout=20)
     helper = tmp_path / 'helper.cmd'
     helper.write_text(update_install.windows_script([], 8765), encoding='ascii')
     env = dict(os.environ, TOKEN_OBSERVATORY_UPDATE_TARGET=str(target),
@@ -223,4 +228,4 @@ def test_windows_helper_replaces_unicode_path(tmp_path):
         time.sleep(0.1)
     assert marker.exists(), (completed.returncode, list(folder.iterdir()))
     assert marker.read_text().strip() == 'started'
-    assert target.read_text(encoding='ascii').startswith('@echo off\necho started')
+    assert target.read_bytes().startswith(b'MZ')
