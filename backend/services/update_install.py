@@ -56,7 +56,14 @@ def install(release, install_kind, root, folder, endpoints, restart_command, rep
                           'then restart Token Observatory (and run ./install.sh again if you installed with it).')
     if install_kind not in SUFFIX or install_kind == 'linux-deb' and platform.machine() not in ('x86_64', 'AMD64', 'amd64'):
         return 'manual', f'This copy can\'t update itself. Download Token Observatory {version} from {release["url"]}'
-    name = f'TokenObservatory-{version}-{SUFFIX[install_kind]}'
+    suffix = SUFFIX[install_kind]
+    if install_kind == 'macos-app':
+        arch = platform.machine().lower()
+        if arch in ('x86_64', 'amd64'):
+            suffix = 'macos-x64.zip'
+        elif arch not in ('arm64', 'aarch64'):
+            return 'manual', f'Unsupported Mac architecture: {arch}. Download Token Observatory {version} from {release["url"]}'
+    name = f'TokenObservatory-{version}-{suffix}'
     report('downloading', f'Downloading and verifying {name}')
     path = fetch_verified(release, name, Path(folder), endpoints)
     report('installing', f'Checksum verified. Installing {version}')

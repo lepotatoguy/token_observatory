@@ -1,0 +1,38 @@
+name: Cross update validation
+on: [push]
+permissions:
+  contents: read
+jobs:
+  linux-legacy:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --prefix frontend && npm run build --prefix frontend
+      - run: |
+          mkdir -p "$RUNNER_TEMP/source/backend/static"
+          git archive v1.5.0 | tar -x -C "$RUNNER_TEMP/source"
+          cp -R frontend/dist/. "$RUNNER_TEMP/source/backend/static/"
+          python3 -m pip install uv==0.11.16
+          uv python install 3.10.20-linux-x86_64-gnu --install-dir "$RUNNER_TEMP/python" --no-bin
+          python3 packaging/build_legacy_runtime.py "$RUNNER_TEMP/python/cpython-3.10.20-linux-x86_64-gnu" "$RUNNER_TEMP/runtime.zip"
+          python3 packaging/build_source.py "$RUNNER_TEMP/source" "$RUNNER_TEMP/source.tar.gz" 1.5.0 "$RUNNER_TEMP/runtime.zip" "$RUNNER_TEMP/runtime.zip" "$RUNNER_TEMP/runtime.zip" "$RUNNER_TEMP/runtime.zip"
+          python3 tests/cross_platform/linux_legacy_e2e.py "$RUNNER_TEMP/source.tar.gz"
+  windows-unit:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install '.[test]'
+      - run: python -m pytest tests/test_services/test_updater.py tests/test_services/test_source_release_compatibility.py -q
