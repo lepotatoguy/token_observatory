@@ -18,6 +18,8 @@ jobs:
         include:
           - os: macos-latest
             asset: macos-arm64.zip
+          - os: macos-15-intel
+            asset: macos-x64.zip
           - os: ubuntu-22.04
             asset: linux-amd64.deb
           - os: windows-latest
@@ -122,12 +124,16 @@ jobs:
           git archive HEAD | tar -x -C source-release
           mkdir -p source-release/backend/static
           cp -R frontend/dist/. source-release/backend/static/
+          python3 -m pip install uv==0.11.16
+          uv python install 3.12.13-linux-x86_64-gnu 3.12.13-linux-aarch64-gnu --install-dir "$RUNNER_TEMP/legacy-python" --no-bin
+          python3 packaging/build_legacy_runtime.py "$RUNNER_TEMP/legacy-python/cpython-3.12.13-linux-x86_64-gnu" "$RUNNER_TEMP/linux-x86_64.zip"
+          python3 packaging/build_legacy_runtime.py "$RUNNER_TEMP/legacy-python/cpython-3.12.13-linux-aarch64-gnu" "$RUNNER_TEMP/linux-aarch64.zip"
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           # The source archive lets source installs (build_app.py, install.sh) update themselves.
-          python3 packaging/build_source.py source-release "assets/TokenObservatory-${GITHUB_REF_NAME#v}-source.tar.gz" "${GITHUB_REF_NAME#v}" "assets/TokenObservatory-${GITHUB_REF_NAME#v}-macos-arm64.zip"
+          python3 packaging/build_source.py source-release "assets/TokenObservatory-${GITHUB_REF_NAME#v}-source.tar.gz" "${GITHUB_REF_NAME#v}" "assets/TokenObservatory-${GITHUB_REF_NAME#v}-macos-arm64.zip" "assets/TokenObservatory-${GITHUB_REF_NAME#v}-macos-x64.zip" "$RUNNER_TEMP/linux-x86_64.zip" "$RUNNER_TEMP/linux-aarch64.zip"
           (cd assets && sha256sum * > SHA256SUMS.txt)
           # Release notes: this version's CHANGELOG section, then the install guide.
           version="${GITHUB_REF_NAME#v}"

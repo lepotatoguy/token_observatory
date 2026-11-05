@@ -60,6 +60,24 @@ def healthy(url):
     return health_identity(url) is not None
 
 
+def wait_for_previous_update(url):
+    """Wait for an older collector that is already shutting down after an update."""
+    try:
+        import json
+        with LOCAL.open(url + '/api/update', timeout=1) as response:
+            status = json.load(response)
+        if status.get('current') == VERSION or status.get('progress', {}).get('state') != 'restarting':
+            return True
+    except (OSError, ValueError, AttributeError):
+        return True
+    deadline = time.monotonic() + STARTUP_SECONDS
+    while healthy(url):
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.2)
+    return True
+
+
 def pid_path(port, folder=None):
     base = Path(folder) / 'collector.pid' if folder is not None else PID_FILE
     return base if port == 8765 else base.with_name(f'collector-{port}.pid')
@@ -211,6 +229,9 @@ def main(argv=None):
         return 0 if ok else 1
     if args.stop:
         return stop_collector(url)
+    if sys.platform == 'win32' and args.no_open and healthy(url) and not wait_for_previous_update(url):
+        say('The previous collector did not stop after the update.', error=True)
+        return 1
     if not healthy(url):
         spawn(args.port, extra_args) if extra_args else spawn(args.port)
         deadline = time.monotonic() + STARTUP_SECONDS

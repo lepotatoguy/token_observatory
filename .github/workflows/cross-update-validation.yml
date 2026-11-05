@@ -1,0 +1,173 @@
+name: Cross update validation
+on: [push]
+permissions:
+  contents: read
+jobs:
+  linux-legacy:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            arch: x86_64
+          - os: ubuntu-22.04-arm
+            arch: aarch64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --prefix frontend && npm run build --prefix frontend
+      - run: |
+          mkdir -p "$RUNNER_TEMP/source/backend/static"
+          git archive HEAD | tar -x -C "$RUNNER_TEMP/source"
+          cp -R frontend/dist/. "$RUNNER_TEMP/source/backend/static/"
+          python3 -m pip install uv==0.11.16
+          uv python install 3.12.13-linux-${{ matrix.arch }}-gnu --install-dir "$RUNNER_TEMP/python" --no-bin
+          python3 packaging/build_legacy_runtime.py "$RUNNER_TEMP/python/cpython-3.12.13-linux-${{ matrix.arch }}-gnu" "$RUNNER_TEMP/runtime.zip"
+          python3 packaging/build_source.py "$RUNNER_TEMP/source" "$RUNNER_TEMP/source.tar.gz" 1.5.0 "$RUNNER_TEMP/runtime.zip" "$RUNNER_TEMP/runtime.zip" "$RUNNER_TEMP/runtime.zip" "$RUNNER_TEMP/runtime.zip"
+          python3 tests/cross_platform/linux_legacy_e2e.py "$RUNNER_TEMP/source.tar.gz"
+  native-tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-latest, macos-latest, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: python -m pip install '.[test]' 'PySide6-Essentials>=6.5,<7'
+      - run: npm ci --prefix frontend
+      - run: npm run test --prefix frontend -- --run
+      - run: npm run build --prefix frontend
+      - run: python -c "import shutil; shutil.copytree('frontend/dist', 'backend/static', dirs_exist_ok=True)"
+      - run: python -m pytest -q
+
+  windows-end-to-end:
+    if: false
+    runs-on: windows-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Download released executables
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download v1.4.0 --pattern 'TokenObservatory-1.4.0-windows-x64.exe' --dir "$RUNNER_TEMP"
+          gh release download v1.5.0 --pattern 'TokenObservatory-1.5.0-windows-x64.exe' --dir "$RUNNER_TEMP"
+      - name: Test automatic update
+        shell: bash
+        run: python -u tests/cross_platform/windows_update_e2e.py "$RUNNER_TEMP/TokenObservatory-1.4.0-windows-x64.exe" "$RUNNER_TEMP/TokenObservatory-1.5.0-windows-x64.exe"
+
+  linux-deb-end-to-end:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Download released packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download v1.4.0 --pattern 'TokenObservatory-1.4.0-linux-amd64.deb' --dir "$RUNNER_TEMP"
+          gh release download v1.5.0 --pattern 'TokenObservatory-1.5.0-linux-amd64.deb' --dir "$RUNNER_TEMP"
+      - name: Test automatic update
+        run: python tests/cross_platform/linux_deb_update_e2e.py "$RUNNER_TEMP/TokenObservatory-1.4.0-linux-amd64.deb" "$RUNNER_TEMP/TokenObservatory-1.5.0-linux-amd64.deb"
+
+  windows-helper-probe:
+    if: false
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Download released executables
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download v1.4.0 --pattern 'TokenObservatory-1.4.0-windows-x64.exe' --dir "$RUNNER_TEMP"
+          gh release download v1.5.0 --pattern 'TokenObservatory-1.5.0-windows-x64.exe' --dir "$RUNNER_TEMP"
+      - name: Build diagnostic launcher
+        shell: powershell
+        run: |
+          $source = @'
+          using System;
+          using System.IO;
+          using System.Diagnostics;
+          using System.Reflection;
+          using System.Net;
+          class Probe {
+            static string Query(string url) { try { var r=(HttpWebRequest)WebRequest.Create(url); r.Timeout=2000; using (var response=r.GetResponse()) using (var reader=new StreamReader(response.GetResponseStream())) return reader.ReadToEnd(); } catch(Exception e) { return e.GetType().Name; } }
+            static void Main(string[] args) {
+            string dir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+            File.AppendAllText(Path.Combine(dir, "bridge.log"), "ARGS " + String.Join(" ", args) + "\nRESET " + Environment.GetEnvironmentVariable("PYINSTALLER_RESET_ENVIRONMENT") + "\n");
+            foreach (System.Collections.DictionaryEntry e in Environment.GetEnvironmentVariables()) { string key = e.Key.ToString(); if (key.StartsWith("_PYI") || key.StartsWith("_MEI")) File.AppendAllText(Path.Combine(dir, "bridge.log"), key + "=" + e.Value + "\n"); }
+            string url = "http://127.0.0.1:" + args[2] + "/api/update"; File.AppendAllText(Path.Combine(dir, "bridge.log"), "BEFORE " + Query(url) + "\n");
+            try { var p = new Process(); p.StartInfo.FileName = Path.Combine(dir, "Standalone.exe"); p.StartInfo.Arguments = String.Join(" ", args); p.StartInfo.UseShellExecute = false; p.Start(); File.AppendAllText(Path.Combine(dir, "bridge.log"), "STARTED " + p.Id + "\n"); if (p.WaitForExit(90000)) File.AppendAllText(Path.Combine(dir, "bridge.log"), "EXIT " + p.ExitCode + " AFTER " + Query(url) + "\n"); else File.AppendAllText(Path.Combine(dir, "bridge.log"), "RUNNING\n"); }
+            catch (Exception e) { File.AppendAllText(Path.Combine(dir, "bridge.log"), e.ToString()); }
+          }}
+          '@
+          $src = Join-Path $env:RUNNER_TEMP "probe.cs"
+          $out = Join-Path $env:RUNNER_TEMP "probe.exe"
+          Set-Content $src $source
+          & "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo /target:winexe "/out:$out" $src
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Test helper launch
+        shell: bash
+        run: python -u tests/cross_platform/windows_update_e2e.py "$RUNNER_TEMP/TokenObservatory-1.4.0-windows-x64.exe" "$RUNNER_TEMP/TokenObservatory-1.5.0-windows-x64.exe" "$RUNNER_TEMP/probe.exe"
+
+  windows-build-and-e2e:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Build replacement
+        shell: bash
+        run: |
+          python -m pip install '.[test]' pyinstaller==6.11.1
+          npm ci --prefix frontend
+          npm run build --prefix frontend
+          python -c "import shutil; shutil.copytree('frontend/dist', 'backend/static', dirs_exist_ok=True)"
+          python -m pytest tests/test_services/test_launcher_update_restart.py tests/test_services/test_updater.py tests/test_services/test_source_release_compatibility.py -q
+          python -m PyInstaller --noconfirm packaging/token_observatory.spec
+      - name: Download old executable
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download v1.4.0 --pattern 'TokenObservatory-1.4.0-windows-x64.exe' --dir "$RUNNER_TEMP"
+      - name: Test automatic update
+        shell: bash
+        run: python -u tests/cross_platform/windows_update_e2e.py "$RUNNER_TEMP/TokenObservatory-1.4.0-windows-x64.exe" "dist/token-observatory.exe"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: verified-windows-exe
+          path: dist/token-observatory.exe
+          if-no-files-found: error
