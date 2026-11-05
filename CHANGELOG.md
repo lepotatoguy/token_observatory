@@ -3,8 +3,19 @@
 All notable changes to Token Observatory. Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
+
+## [1.6.0] - 2026-11-05
 ### Added
 - A floating widget that shows every enabled account's model, 5-hour session meter and weekly meter in a small always-on-top pill on macOS, Windows and Linux. It drags to any position, opens the dashboard on a double-click and refreshes from a compact `/api/quota` endpoint. Qt is an optional `float` extra, so the dashboard and the standalone builds stay small without it.
+
+### Fixed
+- Keep the macOS widget out of the Dock and app switcher while keeping its pill visible when inactive.
+- Restore MiniMax account quota tracking.
+- Preserve Unicode paths during Windows updates and wait for the old collector to exit before restarting.
+- Support legacy source upgrades on Intel Macs and Linux x64/ARM, including bundled compatible Linux Python runtimes.
+
+### Changed
+- Build Intel Mac release artifacts and require native verification across macOS, Windows, and Linux.
 
 ## [1.5.0] - 2026-11-04
 ### Added

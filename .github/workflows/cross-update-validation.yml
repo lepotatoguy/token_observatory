@@ -32,8 +32,9 @@ jobs:
           python3 -m pip install uv==0.11.16
           uv python install 3.12.13-linux-${{ matrix.arch }}-gnu --install-dir "$RUNNER_TEMP/python" --no-bin
           python3 packaging/build_legacy_runtime.py "$RUNNER_TEMP/python/cpython-3.12.13-linux-${{ matrix.arch }}-gnu" "$RUNNER_TEMP/runtime.zip"
-          python3 packaging/build_source.py "$RUNNER_TEMP/source" "$RUNNER_TEMP/source.tar.gz" 1.5.0 "$RUNNER_TEMP/runtime.zip" "$RUNNER_TEMP/runtime.zip" "$RUNNER_TEMP/runtime.zip" "$RUNNER_TEMP/runtime.zip"
-          python3 tests/cross_platform/linux_legacy_e2e.py "$RUNNER_TEMP/source.tar.gz"
+          version=$(python3 -c "from backend.version import VERSION; print(VERSION)")
+          python3 packaging/build_source.py "$RUNNER_TEMP/source" "$RUNNER_TEMP/source.tar.gz" "$version" "$RUNNER_TEMP/runtime.zip" "$RUNNER_TEMP/runtime.zip" "$RUNNER_TEMP/runtime.zip" "$RUNNER_TEMP/runtime.zip"
+          python3 tests/cross_platform/linux_legacy_e2e.py "$RUNNER_TEMP/source.tar.gz" "$version"
   native-tests:
     strategy:
       fail-fast: false
@@ -168,7 +169,9 @@ jobs:
         run: gh release download v1.4.0 --pattern 'TokenObservatory-1.4.0-windows-x64.exe' --dir "$RUNNER_TEMP"
       - name: Test automatic update
         shell: bash
-        run: python -u tests/cross_platform/windows_update_e2e.py "$RUNNER_TEMP/TokenObservatory-1.4.0-windows-x64.exe" "dist/token-observatory.exe"
+        run: |
+          export TOKEN_OBSERVATORY_TEST_VERSION=$(python -c "from backend.version import VERSION; print(VERSION)")
+          python -u tests/cross_platform/windows_update_e2e.py "$RUNNER_TEMP/TokenObservatory-1.4.0-windows-x64.exe" "dist/token-observatory.exe"
       - uses: actions/upload-artifact@v4
         with:
           name: verified-windows-exe

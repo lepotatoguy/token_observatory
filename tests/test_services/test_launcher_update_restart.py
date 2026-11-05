@@ -19,7 +19,7 @@ def test_windows_launcher_waits_until_old_updating_collector_stops():
     assert healthy.call_count == 2
 
 
-@pytest.mark.parametrize(('current', 'state'), [('1.5.0', 'restarting'), ('1.4.0', 'idle')])
+@pytest.mark.parametrize(('current', 'state'), [(launcher.VERSION, 'restarting'), ('1.4.0', 'idle')])
 def test_windows_launcher_does_not_wait_for_unrelated_collector(current, state):
     with patch.object(launcher.LOCAL, 'open', return_value=response(current, state)), \
          patch.object(launcher, 'healthy') as healthy:
