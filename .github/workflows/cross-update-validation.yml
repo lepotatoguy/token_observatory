@@ -115,8 +115,10 @@ jobs:
             catch (Exception e) { File.AppendAllText(Path.Combine(dir, "bridge.log"), e.ToString()); }
           }}
           '@
-          Set-Content "$env:RUNNER_TEMP/probe.cs" $source
-          & "$env:WINDIR/Microsoft.NET/Framework64/v4.0.30319/csc.exe" /nologo /target:winexe "/out:$env:RUNNER_TEMP/probe.exe" "$env:RUNNER_TEMP/probe.cs"
+          $src = Join-Path $env:RUNNER_TEMP "probe.cs"
+          $out = Join-Path $env:RUNNER_TEMP "probe.exe"
+          Set-Content $src $source
+          & "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo /target:winexe "/out:$out" $src
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Test helper launch
         shell: bash
