@@ -1,6 +1,7 @@
 import type { Snapshot, Pricing, UpdateStatus } from "../types/snapshot";
 import type { ProviderStatus, ProviderChoice } from "../types/providers";
 import type { LimitControl, LimitSettings } from "../types/limits";
+import type { Forecast } from "../types/forecast";
 async function request<T>(path: string, body?: unknown): Promise<T> {
   const response = await fetch(path, {
     cache: "no-store",
@@ -43,5 +44,7 @@ export const api = {
   saveUpdate: (v: { notify?: boolean; dismiss?: string }) =>
     request<UpdateStatus>("/api/update/settings", v),
   installUpdate: () => request<UpdateStatus>("/api/update/install", {}),
+  forecast: (refresh = false) =>
+    request<Forecast>(refresh ? "/api/forecast?refresh=1" : "/api/forecast"),
   health: () => request<{ app: string; version: number }>("/api/health"),
 };

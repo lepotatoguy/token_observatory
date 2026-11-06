@@ -59,6 +59,11 @@ def usage():
     return jsonify(services()['store'].read())
 
 
+@blueprint.get('/forecast')
+def budget_forecast():
+    return jsonify(services()['forecast'].payload(refresh=request.args.get('refresh') == '1'))
+
+
 @blueprint.get('/quota')
 def quota():
     """A compact quota view for the floating widget."""

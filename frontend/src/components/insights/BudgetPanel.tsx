@@ -12,6 +12,20 @@ import { saved } from "../../utils/storage";
 import { alertOnce } from "../../utils/notifications";
 import { useAppStore } from "../../store/useAppStore";
 import { providerTokens } from "./LimitsPanel";
+import { api } from "../../api/client";
+import type { Forecast } from "../../types/forecast";
+type Part = {
+  provider: string;
+  daily: number;
+  estimated: boolean;
+  source?: "forecast" | "even";
+  confidence?: "low" | "medium" | "normal";
+  days?: number;
+  method?: string;
+  shrinkage?: number;
+  pairs?: number;
+  backtest?: { model_mae: number; baseline_mae: number; days: number } | null;
+};
 export function suggestedBudget(snapshot: Snapshot, now: number) {
   const parts: { provider: string; daily: number; estimated: boolean }[] = [],
     missing: string[] = [];
@@ -44,6 +58,72 @@ export function suggestedBudget(snapshot: Snapshot, now: number) {
   }
   return { parts, missing, total: parts.reduce((n, p) => n + p.daily, 0) };
 }
+/** The forecast's budget per provider, with the browser's even split for any provider it could not budget. */
+export function combineBudget(
+  browser: ReturnType<typeof suggestedBudget>,
+  forecast: Forecast | null,
+  enabled: string[],
+) {
+  const parts: Part[] = [];
+  for (const provider of ["claude", "codex", "minimax"].filter((p) =>
+    enabled.includes(p),
+  )) {
+    const f = forecast?.providers?.[provider],
+      even = browser.parts.find((p) => p.provider === provider);
+    if (f && f.daily !== null && !f.excluded)
+      parts.push({
+        provider,
+        daily: f.daily,
+        estimated: f.estimated,
+        source: "forecast",
+        confidence: f.confidence,
+        days: f.days_used,
+        method: f.demand_method,
+        shrinkage: f.shrinkage,
+        pairs: f.calibration_pairs,
+        backtest: f.backtest,
+      });
+    else if (even) parts.push({ ...even, source: "even" });
+  }
+  return {
+    parts,
+    missing: enabled.filter((p) => !parts.some((x) => x.provider === p)),
+    total: parts.reduce((n, p) => n + p.daily, 0),
+  };
+}
+/** Which algorithm produced a provider's forecast, and how well it predicted that provider's own recent days. */
+export function methodNote(part: Part) {
+  const test = part.backtest,
+    algorithm =
+      part.method === "weekday_regression"
+        ? `weekday regression (shrinkage ${part.shrinkage})`
+        : test
+          ? "even split across the remaining days (no weekday pattern beat the flat baseline)"
+          : "even split across the remaining days",
+    loss = test
+      ? `usage-prediction error ${compact(test.model_mae)} tokens a day over ${test.days} test days (flat baseline ${compact(test.baseline_mae)})`
+      : "accuracy not measured yet (needs 18 days of history)";
+  return `${providerName(part.provider)}: ${algorithm}; tokens per percent from ${part.pairs} readings over ${part.days} days; ${loss}.`;
+}
+function useForecast(active: boolean) {
+  const [forecast, setForecast] = useState<Forecast | null>(null);
+  useEffect(() => {
+    if (!active) return;
+    let alive = true;
+    const load = () =>
+      api
+        .forecast()
+        .then((value) => alive && setForecast(value))
+        .catch(() => alive && setForecast(null));
+    load();
+    const timer = setInterval(load, 60000);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, [active]);
+  return active ? forecast : null;
+}
 export function BudgetPanel({
   snapshot,
   now,
@@ -57,7 +137,12 @@ export function BudgetPanel({
     [editing, setEditing] = useState(false),
     [input, setInput] = useState(""),
     history = useAppStore((x) => x.historyDay),
-    suggested = suggestedBudget(snapshot, now),
+    forecast = useForecast(!history),
+    suggested = combineBudget(
+      suggestedBudget(snapshot, now),
+      forecast,
+      snapshot.providers?.enabled || [],
+    ),
     providers = [
       ...new Set([
         ...(snapshot.providers?.enabled || ["claude", "codex"]),
@@ -238,20 +323,31 @@ export function BudgetPanel({
         </>
       )}
       {suggested.total ? (
-        <p className="insight-note">
-          Suggested: <strong>{compact(suggested.total)}</strong> a day (
+        <>
+          <p className="insight-note">
+            Suggested: <strong>{compact(suggested.total)}</strong> a day (
+            {suggested.parts
+              .map(
+                (p) =>
+                  `${providerName(p.provider)} ${compact(p.daily)}${p.estimated ? " (estimated reset)" : ""}${p.source === "even" ? " (even split)" : ""}`,
+              )
+              .join(" + ")}
+            ) to stay within weekly limits until reset.{" "}
+            {suggested.parts.some((p) => p.source === "forecast")
+              ? "Forecast from your usage history."
+              : "Estimated from quota snapshots and logged usage."}
+            {suggested.missing.length
+              ? ` ${suggested.missing.map(providerName).join(", ")} excluded: no usable weekly quota.`
+              : ""}
+          </p>
           {suggested.parts
-            .map(
-              (p) =>
-                `${providerName(p.provider)} ${compact(p.daily)}${p.estimated ? " (estimated reset)" : ""}`,
-            )
-            .join(" + ")}
-          ) to stay within weekly limits until reset. Estimated from quota
-          snapshots and logged usage.
-          {suggested.missing.length
-            ? ` ${suggested.missing.map(providerName).join(", ")} excluded: no usable weekly quota.`
-            : ""}
-        </p>
+            .filter((p) => p.source === "forecast")
+            .map((p) => (
+              <p key={p.provider} className="insight-note">
+                {methodNote(p)}
+              </p>
+            ))}
+        </>
       ) : (
         <p className="insight-note">
           No suggestion yet: it needs a weekly quota with a known reset and some

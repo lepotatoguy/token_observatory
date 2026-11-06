@@ -31,6 +31,11 @@ def percentage(value):
     return value if isinstance(value, (int, float)) and not isinstance(value, bool) else None
 
 
+def usable(samples):
+    """Samples that carry a time and a usage mapping."""
+    return [s for s in samples if isinstance(s, dict) and isinstance(s.get('t'), (int, float)) and isinstance(s.get('u'), dict)]
+
+
 class PlanUsage:
     """Newest usage sample from plan-usage-history.json, re-read only when the file changes."""
 
@@ -49,13 +54,21 @@ class PlanUsage:
             samples = json.loads(self.path.read_text()).get('samples') or []
         except (OSError, ValueError, AttributeError):
             return self.latest
-        valid = [s for s in samples if isinstance(s, dict) and isinstance(s.get('t'), (int, float)) and isinstance(s.get('u'), dict)]
-        newest = max(valid, key=lambda s: s['t'], default=None)
+        newest = max(usable(samples), key=lambda s: s['t'], default=None)
         # Only the percentages and time are kept; the organization ID is never read out.
         self.latest = dict(observed_at=newest['t'] / 1000, five_hour=percentage(newest['u'].get('fh')),
                            seven_day=percentage(newest['u'].get('sd'))) if newest else None
         self.mtime = mtime
         return self.latest
+
+    def samples(self):
+        """Every usable sample as (seconds, five_hour, seven_day), oldest first; the organization ID is never read out."""
+        try:
+            raw = json.loads(self.path.read_text()).get('samples') or [] if self.path else []
+        except (OSError, ValueError, AttributeError):
+            return []
+        rows = [(s['t'] / 1000, percentage(s['u'].get('fh')), percentage(s['u'].get('sd'))) for s in usable(raw)]
+        return sorted(rows, key=lambda row: row[0])
 
 
 def read_capture(path):

@@ -8,7 +8,7 @@ import threading
 
 from backend.api.routes import blueprint as dashboard, apply_proxies
 from backend.parsers import local_proxy
-from backend.services import claude_context, pricing, providers, updater, update_install
+from backend.services import claude_context, forecast, pricing, providers, updater, update_install
 from backend.services.store import Store
 
 from backend.api.health import blueprint as health
@@ -30,6 +30,7 @@ def create_app(config: Config | None = None) -> Flask:
         folder / 'claude-rate-limits.json', folder / 'live-limits.json',
         settings=providers.Settings(folder / 'providers.json'), local_log=folder / 'local-usage.jsonl',
         lmstudio_folder=getattr(config, 'LMSTUDIO_FOLDER', None) or folder / 'lmstudio/conversations', detect_providers=False)
+    app.extensions['forecast'] = forecast.Forecaster(app.extensions['store'], folder)
     app.extensions['proxies'] = local_proxy.Proxies(local_proxy.Recorder(folder / 'local-usage.jsonl'))
     app.extensions['pricing'] = pricing.Pricing(folder / 'pricing.json', folder / 'config.json')
     root = Path(__file__).resolve().parents[1]
