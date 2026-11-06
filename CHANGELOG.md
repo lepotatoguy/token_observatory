@@ -4,6 +4,12 @@ All notable changes to Token Observatory. Versions follow [Semantic Versioning](
 
 ## [Unreleased]
 
+## [1.6.1] - 2026-11-06
+### Fixed
+- Claude Code limits no longer show a placeholder 0% when the Claude desktop app has no account data, and live or status line answers older than 24 hours are dropped.
+- When Claude Code is signed out, the Usage limits panel shows a sign-in prompt with the `claude auth login` command and a Copy button.
+- The Usage limits panel shows when limits were last checked, so Refresh visibly does something.
+
 ## [1.6.0] - 2026-11-05
 ### Added
 - A floating widget that shows every enabled account's model, 5-hour session meter and weekly meter in a small always-on-top pill on macOS, Windows and Linux. It drags to any position, opens the dashboard on a double-click and refreshes from a compact `/api/quota` endpoint. Qt is an optional `float` extra, so the dashboard and the standalone builds stay small without it.

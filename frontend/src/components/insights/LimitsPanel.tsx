@@ -6,6 +6,7 @@ import { useAppStore } from "../../store/useAppStore";
 import { eventTotal, providerName } from "../../utils/tokens";
 import { countdown, date, relative } from "../../utils/time";
 import { alertOnce } from "../../utils/notifications";
+const SIGN_IN = /sign-in|signed out|login/i;
 export const windowLabel = (minutes: number) =>
   minutes === 300
     ? "5-hour"
@@ -203,11 +204,29 @@ export function LimitsPanel({
           </p>
         </div>
       ))}
-      {!historyDay && Object.entries(snapshot.live_limits?.errors || {}).map(([provider, error]) => (
-        <p className="limit-error" role="status" key={provider}>
-          {providerName(provider)}: {error}{limits[provider] ? " Showing the last recorded quota." : ""}
+      {!historyDay && snapshot.live_limits?.checked_at != null && (
+        <p className="insight-note">
+          Last checked {relative(snapshot.live_limits.checked_at, now)}. Refresh checks again.
         </p>
-      ))}
+      )}
+      {!historyDay && Object.entries(snapshot.live_limits?.errors || {}).map(([provider, error]) =>
+        provider === "claude" && SIGN_IN.test(error) ? (
+          <div className="limit-error sign-in" role="status" key={provider}>
+            <strong>Sign in to Claude Code to see its limits.</strong>
+            <p>
+              Run this in a terminal, finish the browser sign-in with your claude.ai Pro or Max account, then press Refresh.
+            </p>
+            <code>claude auth login</code>{" "}
+            <button className="link" onClick={() => void navigator.clipboard?.writeText("claude auth login")}>
+              Copy
+            </button>
+          </div>
+        ) : (
+          <p className="limit-error" role="status" key={provider}>
+            {providerName(provider)}: {error}{limits[provider] ? " Showing the last recorded quota." : ""}
+          </p>
+        ),
+      )}
       {!Object.keys(limits).length && (
         <p className="insight-note">
           No account quota recorded. Refresh to check supported clients.

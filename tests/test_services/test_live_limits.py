@@ -65,7 +65,7 @@ class ProcessTests(unittest.TestCase):
             result, error = live_limits.claude_usage(fake_tool(folder, 'claude', script), folder)
             self.assertIsNone(result)
             self.assertIn('signed out', error)
-            self.assertIn('claude /login', error)
+            self.assertIn('claude auth login', error)
 
     def test_signed_in_without_report_keeps_plan_message(self):
         with tempfile.TemporaryDirectory() as folder:

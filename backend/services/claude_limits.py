@@ -15,6 +15,7 @@ import sys
 
 FIVE_HOURS = 300
 WEEK_MINUTES = 10080
+MAX_AGE = 24 * 3600  # Older live or status line answers describe windows that have already rolled over.
 
 
 def desktop_folder():
@@ -75,11 +76,15 @@ def captured_window(window, minutes):
 def limits(plan, resets, now, capture=None, live=None):
     """Combine the best available usage percentages and reset times, shaped like Codex limits."""
     found = [live] if isinstance(live, dict) and isinstance(live.get('observed_at'), (int, float)) else []
-    if capture:
+    if capture and now - capture['captured_at'] <= MAX_AGE:
         found.append(dict(primary=captured_window(capture.get('five_hour'), FIVE_HOURS),
                           secondary=captured_window(capture.get('seven_day'), WEEK_MINUTES),
                           observed_at=capture['captured_at'], source='statusline'))
+    found = [f for f in found if now - f['observed_at'] <= MAX_AGE]
     newest = max(found, key=lambda f: f['observed_at'], default=None)
+    # The desktop app records 0% / 0% when it has no account data; with no logged reset that is "unreported", not "unused".
+    if plan and not (plan.get('five_hour') or plan.get('seven_day')) and not resets:
+        plan = None
     if newest and newest['observed_at'] >= (plan or {}).get('observed_at', 0):
         return newest
     if not plan and not resets:
