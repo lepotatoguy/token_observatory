@@ -126,7 +126,9 @@ jobs:
           npm ci --prefix frontend
           npm run build --prefix frontend
           mkdir -p source-release
-          git archive "v$VERSION" | tar -x -C source-release
+          # A manual run has no tag yet: archive the checked-out commit so every packaging step still runs.
+          ref="v$VERSION"; [[ "$GITHUB_REF_TYPE" == tag ]] || ref=HEAD
+          git archive "$ref" | tar -x -C source-release
           mkdir -p source-release/backend/static
           cp -R frontend/dist/. source-release/backend/static/
           python3 -m pip install uv==0.11.16
