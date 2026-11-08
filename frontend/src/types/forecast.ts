@@ -9,6 +9,10 @@ export interface ForecastProvider {
   calibration_pairs: number;
   shrinkage: number;
   backtest: { model_mae: number; baseline_mae: number; days: number } | null;
+  calibration_kind: "single" | "by_type" | null;
+  calibration_readings: number;
+  rolling: { mae_points: number; single_mae_points: number; readings: number } | null;
+  budget_check: { within: number; scored: number } | null;
   confidence: "low" | "medium" | "normal";
   days_used: number;
   estimated: boolean;

@@ -19,6 +19,19 @@ class UpdatePreferences(BaseModel):
     dismiss: StrictStr | None = None
 
 
+class WidgetUpdate(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    enabled: StrictBool
+
+
+class WarmupUpdate(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    provider: StrictStr
+    enabled: StrictBool
+    times: list[StrictStr]
+    model: StrictStr | None = None
+
+
 def payload(model=ObjectPayload):
     value = request.get_json()
     if not isinstance(value, dict):
@@ -67,6 +80,8 @@ def budget_forecast():
 @blueprint.get('/quota')
 def quota():
     """A compact quota view for the floating widget."""
+    if request.args.get('client') == 'widget':
+        services()['widget'].touch()
     return jsonify(services()['store'].quota())
 
 
@@ -131,9 +146,37 @@ def provider_settings():
     return jsonify(provider_status(ext))
 
 
+@blueprint.route('/widget', methods=['GET', 'POST'])
+def widget_settings():
+    widget = services()['widget']
+    if request.method == 'POST':
+        try:
+            return jsonify(widget.set_enabled(payload(WidgetUpdate)['enabled']))
+        except (KeyError, ValueError) as error:
+            abort(400, str(error))
+    return jsonify(widget.status())
+
+
+@blueprint.route('/warmup', methods=['GET', 'POST'])
+def warmup_settings():
+    warmup = services()['warmup']
+    if request.method == 'POST':
+        try:
+            return jsonify(warmup.update(payload(WarmupUpdate)))
+        except ValueError as error:
+            abort(400, str(error))
+    return jsonify(warmup.snapshot())
+
+
 @blueprint.get('/update')
 def update_status():
     return jsonify(services()['updates'].status())
+
+
+@blueprint.post('/update/check')
+def check_update():
+    """Check for a new release now, from the Settings button."""
+    return jsonify(services()['updates'].check_now())
 
 
 @blueprint.post('/update/settings')

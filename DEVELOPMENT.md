@@ -128,7 +128,7 @@ To release:
 
 ### Floating widget
 
-The floating widget is optional and needs Qt (`pip install '.[float]'`, or `build_app.py --with-float` for the macOS app). It is a separate process started with `launcher.py --float` and reads `GET /api/quota` from the local collector every 5 seconds.
+The floating widget needs Qt, a required dependency (PySide6-Essentials). It is a separate process: the `Widget` service in `backend/services/widget_control.py` stores the on/off setting in `widget.json` and starts `launcher.py --float --port N` detached while the setting is on. A widget started that way is marked managed (`TOKEN_OBSERVATORY_WIDGET_MANAGED=1`): it polls `GET /api/quota?client=widget` and `GET /api/widget` every 5 seconds and quits when the setting is off or the collector is unreachable for 3 polls. A hand-started `--float` is unmanaged and ignores the setting. A `QLockFile` keeps one widget running; a second exits with code 75.
 
 | Path | Purpose |
 |---|---|
@@ -137,7 +137,13 @@ The floating widget is optional and needs Qt (`pip install '.[float]'`, or `buil
 | backend/services/float_window.py | The Qt widget: the pill, its meters, dragging and the position file |
 | backend/services/float_panel.py | Entry point that reports the missing extra instead of failing |
 
-`float_window` imports PySide6 at module level and `float_panel` imports it through `importlib`, so PyInstaller leaves Qt out of a standalone build unless PySide6 is installed in the build environment. The release workflow installs it for the test run and removes it again before packaging, which keeps the published artifacts small.
+`float_window` imports PySide6 at module level and `float_panel` imports it through `importlib`. `packaging/token_observatory.spec` imports PySide6 unconditionally, so a build without it fails, and the release workflow keeps Qt installed for packaging.
+
+### Window warm-up
+
+`backend/services/warmup.py` stores per-provider daily times in `warmup.json` and one outcome per slot (provider, date, time) in `warmup-state.json` (last 200). A `Runtime` job calls `tick()` every 30 seconds: due slots are sent, slots 30 minutes or more late are recorded as `missed`, and slots are skipped as `skipped_active` when the five-hour window has a future reset and some usage. `backend/services/warmup_send.py` runs `claude -p hello --model haiku --effort low --no-session-persistence --tools ''` or `codex exec --sandbox read-only -c model_reasoning_effort=low hello` (60 second timeout, one send at a time) and discards the reply. When the window is used up (100% with a future reset) at a due slot, the slot is deferred to `resets_at + 60` seconds, kept in `warmup-state.json`, re-checked at that time, and recorded `missed` if it is 30 minutes or more late. A due warm-up reads fresh limits through `Store.refresh_live` first. Slots use local wall-clock time, so a time inside a spring daylight-saving gap is recorded as `missed`.
+
+The warm-up Claude run creates an empty project folder under `~/.claude/projects` for the data folder. A Codex warm-up is a normal Codex session, so its few tokens appear in usage like any other session.
 
 ## Repository layout
 

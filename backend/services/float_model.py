@@ -1,6 +1,6 @@
 """The display model behind the floating usage widget.
 
-The widget is a small pill that shows each account's model and its session and
+The widget is a small pill that shows each account's name and its session and
 weekly quota. This module turns a quota payload into that display model and
 holds the colours, so the layout can be tested without a display or a toolkit.
 """
@@ -20,6 +20,20 @@ BORDER = '#3C3C42'
 TRACK = '#3C3C42'
 TEXT = '#F4F4F6'
 MUTED = '#9C9CA6'
+
+
+MAX_MISSES = 3
+
+
+def follow(setting, misses):
+    """Decide whether a managed widget should quit. Returns (quit_now, unreachable_polls).
+
+    `setting` is the collector's /api/widget answer, or None when it could not be reached.
+    """
+    if setting is None:
+        misses += 1
+        return misses >= MAX_MISSES, misses
+    return (isinstance(setting, dict) and setting.get('enabled') is False), 0
 
 
 def number(value):

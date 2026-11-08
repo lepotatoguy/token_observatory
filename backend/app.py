@@ -5,15 +5,22 @@ from pathlib import Path
 import logging
 import sys
 import threading
+import time
 
 from backend.api.routes import blueprint as dashboard, apply_proxies
 from backend.parsers import local_proxy
-from backend.services import claude_context, forecast, pricing, providers, updater, update_install
+from backend.services import (claude_context, forecast, pricing, providers, quota, updater, update_install,
+                              warmup, warmup_send, widget_control)
 from backend.services.store import Store
 
 from backend.api.health import blueprint as health
 from backend.config import Config
 from backend.middleware.security import SecurityMiddleware
+
+
+LIVE_TICK_SECONDS = 1      # how often the live-limit job wakes
+LIVE_WIDGET_SECONDS = 2    # live limits refresh this often while the widget is running
+LIVE_IDLE_SECONDS = 300    # and this often when it is not
 
 
 def create_app(config: Config | None = None) -> Flask:
@@ -38,6 +45,16 @@ def create_app(config: Config | None = None) -> Flask:
         folder, kind=update_install.kind(getattr(sys, 'frozen', False), sys.platform, root, folder),
         root=root, before_restart=lambda: app.extensions['store'].read(force_save=True),
         stop_server=lambda: app.extensions.get('shutdown', lambda: None)())
+    app.extensions['widget'] = widget_control.Widget(folder, widget_control.command(config.PORT))
+    app.extensions['warmup_sender'] = warmup_send.Sender(folder)
+    store = app.extensions['store']
+
+    def five_hour_window(provider):
+        # A due warm-up decides from fresh numbers, not from the last scheduled refresh.
+        snapshot = (store.refresh_live() if config.LIVE_CHECKS else store.read()) or {}
+        return quota.pick((snapshot.get('limits') or {}).get(provider) or {}, quota.SESSION_MINUTES, 'primary')
+
+    app.extensions['warmup'] = warmup.Warmup(folder, app.extensions['warmup_sender'], five_hour_window)
     app.extensions['runtime'] = Runtime(app, config)
     app.register_blueprint(dashboard, url_prefix='/api')
     app.register_blueprint(health, url_prefix="/api")
@@ -88,6 +105,27 @@ class Runtime:
             if self.stop_event.wait(interval):
                 break
 
+    def live_tick(self, now=None):
+        """Refresh account limits often while the floating widget shows them, rarely otherwise."""
+        ext = self.app.extensions
+        now = time.time() if now is None else now
+        age = now - (ext['store'].live.get('checked_at') or 0)
+        every = LIVE_WIDGET_SECONDS if ext['widget'].running() else LIVE_IDLE_SECONDS
+        if age >= every:
+            ext['store'].refresh_live(min_age=every)
+
+    def jobs(self):
+        ext = self.app.extensions
+        jobs = [(ext['store'].read, 2),
+                (lambda: ext['pricing'].update(cancelled=self.stop_event.is_set), 3600),
+                (ext['widget'].ensure, 10),
+                (lambda: ext['warmup'].tick(), 30)]
+        if self.config.LIVE_CHECKS:
+            jobs.append((self.live_tick, LIVE_TICK_SECONDS))
+        if self.config.UPDATE_CHECKS:
+            jobs.append((ext['updates'].check, 3600))
+        return jobs
+
     def start(self, restart_command=None, shutdown=None):
         if self.threads:
             return
@@ -98,20 +136,16 @@ class Runtime:
         from backend.api.routes import provider_status
         provider_status(ext)
         apply_proxies(ext)
-        jobs = [(ext['store'].read, 2),
-                (lambda: ext['pricing'].update(cancelled=self.stop_event.is_set), 3600)]
-        if self.config.LIVE_CHECKS:
-            jobs.append((ext['store'].refresh_live, 300))
         if self.config.UPDATE_CHECKS:
             ext['updates'].finish()
-            jobs.append((ext['updates'].check, 3600))
-        for callback, interval in jobs:
+        for callback, interval in self.jobs():
             worker = threading.Thread(target=self._loop, args=(callback, interval), daemon=True)
             self.threads.append(worker)
             worker.start()
 
     def stop(self):
         self.stop_event.set()
+        self.app.extensions['warmup_sender'].stop()
         self.app.extensions['proxies'].stop()
         for worker in self.threads:
             worker.join(timeout=35)

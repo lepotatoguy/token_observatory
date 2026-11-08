@@ -132,10 +132,12 @@ class Store:
             cached = self.quota_payload
         return cached if cached is not None else quota_service.payload(self.read())
 
-    def refresh_live(self):
-        """Refresh enabled account limits, then rescan. Failed checks keep the last good answer."""
+    def refresh_live(self, min_age=LIVE_REUSE_SECONDS):
+        """Refresh enabled account limits, then rescan. Failed checks keep the last good answer.
+
+        A check newer than min_age seconds is reused, so repeated Refresh clicks stay cheap."""
         with self.live_lock:
-            if time.time() - (self.live.get('checked_at') or 0) >= LIVE_REUSE_SECONDS:
+            if time.time() - (self.live.get('checked_at') or 0) >= min_age:
                 enabled = self.settings.enabled(self.detected)
                 tools = self.live_tools or dict(claude=live_limits.find_tool('claude'), codex=live_limits.find_tool('codex'))
                 tools = {name: path for name, path in tools.items() if name in enabled}

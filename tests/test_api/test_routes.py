@@ -78,6 +78,16 @@ def test_update_routes(client, app):
     assert client.post('/api/update/install', json={}).json == {'state': 'installing'}
 
 
+def test_manual_update_check_route(client, app):
+    updates = app.extensions['updates']
+    updates.check_now = Mock(return_value={'current': '1.6.1', 'latest': None, 'checked_at': 5.0})
+    assert client.post('/api/update/check', json={}).json == {'current': '1.6.1', 'latest': None, 'checked_at': 5.0}
+    updates.check_now.assert_called_once()
+    assert client.post('/api/update/check', data='x').status_code == 415
+    assert client.post('/api/update/check', json={'pad': 'x' * 2000}).status_code == 413
+    assert client.get('/api/update/check').status_code == 404
+
+
 def test_spa_assets_and_api_404(client, app, tmp_path):
     folder = app.config['FRONTEND_DIST']
     # Config's Path can point at the shared build; do not mutate it.
@@ -105,7 +115,7 @@ def test_runtime_start_stop(app, monkeypatch):
     runtime = ext['runtime']
     runtime.start()
     threads = list(runtime.threads)
-    assert len(threads) == 2
+    assert len(threads) == 4  # store, pricing, widget, warm-up
     runtime.start()
     assert runtime.threads == threads
     runtime.stop()

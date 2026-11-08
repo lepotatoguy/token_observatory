@@ -22,6 +22,9 @@ from backend.services.claude_statusline import read_json, write_json
 EVENTS = ('UserPromptSubmit', 'PreToolUse', 'PostToolUse')
 MARKER = '--hook'
 TIMEOUT = 5
+# `claude -p /usage` takes about 1.2 s; 1 s always timed out. Two attempts (usage, then the
+# sign-in check on failure) must still fit inside the TIMEOUT-second hook limit.
+CLAUDE_LOOKUP_SECONDS = 2.4
 DEFAULT_LIMIT, DEFAULT_CONTEXT = 90, 60
 TAIL_BYTES = 1 << 20
 FIVE_HOURS = 5 * 3600
@@ -141,7 +144,7 @@ def fresh_limits(provider, cwd):
     if provider == 'codex':
         snapshot, _ = live_limits.codex_limits(binary, timeout=1)
     else:
-        snapshot, _ = live_limits.claude_usage(binary, cwd, timeout=1)
+        snapshot, _ = live_limits.claude_usage(binary, cwd, timeout=CLAUDE_LOOKUP_SECONDS)
     return {row['id']: row for row in limit_rows(snapshot)}
 
 
@@ -180,8 +183,9 @@ def mode_policy(mode, hard=100, weekly_reserve=None):
                 'including historical messages without expiry. This mode is advisory only: continue the authorized task; '
                 'do not impose a Token Observatory pause even at 100%. Provider-enforced limits still apply. '
                 'Keep existing task scope and unrelated approval requirements. A new conversation is optional.')
-    rules = (f'The configured 5-hour hard limit is {hard:g}% used. ' if hard is not None else 'The 5-hour hard limit is disabled. ')
-    rules += (f'The weekly reserve is {weekly_reserve:g}% remaining ({100-weekly_reserve:g}% used). '
+    rules = ('Configured thresholds below are settings, not current usage. ' +
+             (f'Pause when 5-hour usage reaches {hard:g}%. ' if hard is not None else 'The 5-hour hard limit is disabled. '))
+    rules += (f'Pause when weekly remaining quota falls to {weekly_reserve:g}% or less (weekly usage {100-weekly_reserve:g}% or more). '
               if weekly_reserve is not None else 'The weekly hard limit is disabled. ')
     return RESUMPTION.replace(
         'A fresh result below 100% permits resumption for that limit, including an advisory threshold. '

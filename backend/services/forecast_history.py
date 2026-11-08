@@ -5,14 +5,19 @@ appears in several daily files is taken only from the newest one, because later
 captures hold every earlier event of the same session.
 """
 from dataclasses import dataclass
+import bisect
 import datetime as dt
 import math
+from operator import itemgetter
 
 from backend.parsers._helpers import FIELDS, number
 from backend.services import quota
 
 WINDOW_DAYS = 30
 COUNTED = tuple(field for field in FIELDS if field != 'reasoning')  # Reasoning is already part of output.
+assert COUNTED == ('input', 'cached', 'write', 'output')  # collect() reads these four fields inline.
+INF = math.inf
+fields = itemgetter('at', *COUNTED)
 
 
 @dataclass(frozen=True)
@@ -26,6 +31,7 @@ class Sample:
 @dataclass(frozen=True)
 class History:
     events: dict      # provider -> sorted [(seconds, tokens)] inside the history window, today included
+    typed: dict       # provider -> sorted [(seconds, input, cached, write, output)], the same events split by token type
     series: dict      # provider -> daily totals, oldest first, ending yesterday
     first_day: dict   # provider -> date of the first recorded event inside the window
     samples: dict     # provider -> [Sample] sorted by time
@@ -53,7 +59,7 @@ def collect(snapshot, archive, plan_samples, today, providers, days=WINDOW_DAYS)
     first = today - dt.timedelta(days=days)
     start = dt.datetime.combine(first, dt.time()).timestamp()
     seen, warnings, marks = set(), [], set()
-    rows = {provider: [] for provider in providers}
+    typed_rows = {provider: [] for provider in providers}
     samples = {}
     skipped = 0
 
@@ -77,12 +83,22 @@ def collect(snapshot, archive, plan_samples, today, providers, days=WINDOW_DAYS)
             if provider not in providers:
                 continue
             add_sample(provider, session.get('rate_limits_at'), weekly(session.get('rate_limits')))
+            typed_into = typed_rows[provider]
             for event in session.get('events') or []:
-                at = event.get('at')
-                if not is_time(at):
+                try:
+                    at, a, b, c, d = fields(event)
+                except KeyError:  # A missing field reads as absent, like event.get.
+                    at, a, b, c, d = (event.get(name) for name in ('at', *COUNTED))
+                kind = at.__class__
+                if not ((kind is float and -INF < at < INF) or kind is int or is_time(at)):
                     skipped += 1
                 elif at >= start:
-                    rows[provider].append((at, sum(number(event.get(field)) for field in COUNTED)))
+                    if a.__class__ is int and b.__class__ is int and c.__class__ is int and d.__class__ is int \
+                            and a >= 0 and b >= 0 and c >= 0 and d >= 0:
+                        typed_into.append((at, a, b, c, d))
+                    else:  # Missing, negative, fractional or boolean counts take the careful path.
+                        values = [number(v) for v in (a, b, c, d)]
+                        typed_into.append((at, *values))
         for provider, limits in (snap.get('limits') or {}).items():
             if isinstance(limits, dict):
                 add_sample(provider, limits.get('observed_at'), weekly(limits))
@@ -104,20 +120,30 @@ def collect(snapshot, archive, plan_samples, today, providers, days=WINDOW_DAYS)
     for t, _five, seven in plan_samples:
         add_sample('claude', t, dict(used_percent=seven, resets_at=None))
 
-    events, series, first_day = {}, {}, {}
-    for provider, found in rows.items():
+    events, typed, series, first_day = {}, {}, {}, {}
+    for provider, found in typed_rows.items():
         if not found:
             continue
         found.sort()
-        events[provider] = found
+        typed[provider] = found
+        events[provider] = [(row[0], row[1] + row[2] + row[3] + row[4]) for row in found]
         totals = {}
-        for at, tokens in found:
-            day = day_of(at)
-            if day is not None and day < today:
-                totals[day] = totals.get(day, 0) + tokens
+        low, count = 0, len(found)
+        while low < count:  # One local-day bucket at a time, so day_of runs per day, not per event.
+            day = day_of(found[low][0])
+            if day is None:
+                low += 1
+                continue
+            end = dt.datetime.combine(day + dt.timedelta(days=1), dt.time()).timestamp()
+            high = bisect.bisect_left(found, (end,), low)
+            if high <= low:  # A clock jump put the boundary at or before this event: take it alone.
+                high = low + 1
+            if day < today:
+                totals[day] = totals.get(day, 0) + sum(row[1] + row[2] + row[3] + row[4] for row in found[low:high])
+            low = high
         if totals:
             begin = min(totals)
             series[provider] = [totals.get(begin + dt.timedelta(days=i), 0) for i in range((today - begin).days)]
             first_day[provider] = begin
     ordered = {provider: sorted(found, key=lambda sample: sample.t) for provider, found in samples.items()}
-    return History(events, series, first_day, ordered, skipped, warnings)
+    return History(events, typed, series, first_day, ordered, skipped, warnings)

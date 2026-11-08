@@ -8,7 +8,7 @@ Token Observatory has a Flask and Pydantic backend and a React 18 frontend writt
 - Read source logs without changing them. Only explicit install/uninstall commands may modify Claude Code or Codex settings.
 - Keep prompts, responses and credentials out of normalized history and exports. Local proxy titles retain only the first 60 characters of the first user message.
 - Show missing measurements as unreported. Reasoning is included in output tokens and must not be counted twice. Preserve response deduplication and subagent grouping.
-- MiniMax tracking reads local logs and its native read-only SQLite ledger. Do not add automatic remote quota calls or API-key controls.
+- MiniMax tracking reads local logs and its native read-only SQLite ledger. Do not add automatic remote quota calls or API-key controls. The one exception is the opt-in window warm-up, which sends a fixed "hello" through the provider's own tool at times the user schedules; it is off by default, never stores replies, and must not read Claude or Codex credentials.
 - Preserve recorded history when a provider is disabled. Provider choices control live services.
 
 ## Development

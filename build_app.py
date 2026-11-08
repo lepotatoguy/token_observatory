@@ -24,7 +24,7 @@ def check_owned(path):
 
 APP_FILES = ['launcher.py', 'pyproject.toml', 'logo.svg']
 
-def prepare_runtime(resources, with_float=False):
+def prepare_runtime(resources):
     if sys.version_info < (3, 10):
         raise RuntimeError('Python 3.10 or later is required')
     static = ROOT / 'frontend/dist'
@@ -40,17 +40,13 @@ def prepare_runtime(resources, with_float=False):
     interpreter = str(Path(sys._base_executable).resolve())
     subprocess.run([interpreter, '-m', 'venv', '--copies', str(resources / '.venv')], check=True)
     subprocess.run([str(resources / '.venv/bin/python'), '-m', 'pip', 'install', str(resources)], check=True)
-    if with_float:
-        # The floating widget draws itself with Qt, which the dashboard itself does not need.
-        subprocess.run([str(resources / '.venv/bin/python'), '-m', 'pip', 'install',
-                        f'{resources}[float]'], check=True)
     for generated in [resources / 'build', *resources.glob('*.egg-info')]:
         if generated.is_dir():
             shutil.rmtree(generated)
 
 
 
-def main(with_float=False):
+def main():
     legacy = ROOT / 'dist/Token Observatory.app'
     check_owned(legacy)
     check_owned(DESTINATION)
@@ -64,7 +60,7 @@ def main(with_float=False):
         executable.parent.mkdir(parents=True)
         for name in APP_FILES:
             shutil.copy2(ROOT / name, resources / name)
-        prepare_runtime(resources, with_float=with_float)
+        prepare_runtime(resources)
         shutil.copy2(ROOT / 'launch-app.sh', executable)
         executable.chmod(0o755)
         master = temporary / 'logo.png'
@@ -112,7 +108,7 @@ def main(with_float=False):
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description='Build and install the macOS app.')
-    parser.add_argument('--with-float', action='store_true',
-                        help='include the floating widget, which needs Qt')
-    args = parser.parse_args()
-    main(with_float=args.with_float)
+    # Accepted and ignored: the floating widget runtime is always included now.
+    parser.add_argument('--with-float', action='store_true', help=argparse.SUPPRESS)
+    parser.parse_args()
+    main()

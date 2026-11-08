@@ -12,13 +12,14 @@ import urllib.request
 import webbrowser
 from pathlib import Path
 
-from PySide6.QtCore import QRectF, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QLockFile, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QApplication, QMenu, QWidget
 
 from backend.services import float_model
 
 POLL_SECONDS = 5
+ALREADY_RUNNING = 75  # exit code when another widget holds the lock; the collector does not count it as a crash
 PADDING_X = 12
 PADDING_Y = 9
 ACCENT_WIDTH = 3
@@ -31,7 +32,6 @@ BAR_HEIGHT = 4
 PROVIDER_GAP = 18
 METER_SLOTS = 2
 NAME_SIZE = 12
-BADGE_SIZE = 9
 METER_SIZE = 10
 RADIUS = 18
 
@@ -44,13 +44,21 @@ def alpha(hex_color, value):
 
 
 class FloatWindow(QWidget):
-    """A frameless pill that shows each account's model and its quota meters."""
+    """A frameless pill that shows each account's name and its quota meters."""
 
     updated = Signal(object)
+    checked = Signal(object)
 
-    def __init__(self, url, position_file=None):
+    def __init__(self, url, position_file=None, managed=False):
         super().__init__()
         self.url = url
+        # A managed widget was started by the collector, so the dashboard setting decides how long it lives.
+        self.managed = managed
+        base = url.rsplit('/api/', 1)[0]
+        self.quota_url = f'{url}?client=widget' if managed else url
+        self.setting_url = f'{base}/api/widget'
+        self.misses = 0
+        self.closing = False
         self.position_file = Path(position_file) if position_file else None
         self.payload = {}
         self.rows = []
@@ -63,7 +71,6 @@ class FloatWindow(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.font_name = self._font(NAME_SIZE, QFont.Weight.DemiBold)
-        self.font_badge = self._font(BADGE_SIZE)
         self.font_meter = self._font(METER_SIZE)
         self.font_meter_strong = self._font(METER_SIZE, QFont.Weight.DemiBold)
         self.font_message = self._font(METER_SIZE + 1)
@@ -71,6 +78,7 @@ class FloatWindow(QWidget):
         self.timer.timeout.connect(self.poll)
         self.timer.start(POLL_SECONDS * 1000)
         self.updated.connect(self.apply)
+        self.checked.connect(self.follow)
         self.restored = self.restore()
 
     def _font(self, size, weight=None):
@@ -88,11 +96,39 @@ class FloatWindow(QWidget):
 
     def _fetch(self):
         try:
-            with urllib.request.urlopen(self.url, timeout=5) as response:
+            with urllib.request.urlopen(self.quota_url, timeout=5) as response:
                 data = json.loads(response.read().decode('utf-8'))
         except Exception as error:
             data = {'error': str(error)}
         self.updated.emit(data)
+        if self.managed:
+            try:
+                with urllib.request.urlopen(self.setting_url, timeout=5) as response:
+                    setting = json.loads(response.read().decode('utf-8'))
+            except Exception:
+                setting = None
+            self.checked.emit(setting)
+
+    def follow(self, setting):
+        """Quit when the dashboard turns the widget off or the collector is gone."""
+        if not self.managed:
+            return
+        quit_now, self.misses = float_model.follow(setting, self.misses)
+        if quit_now:
+            self.shutdown()
+
+    def shutdown(self):
+        self.closing = True
+        self.close()
+        app = QApplication.instance()
+        if app is not None:
+            app.quit()
+
+    def quit(self):
+        """The menu's Quit: a managed widget also turns the dashboard setting off so it stays closed."""
+        if self.managed:
+            post_setting(self.setting_url, False)
+        self.shutdown()
 
     def apply(self, payload):
         """Show a new quota reading."""
@@ -104,15 +140,12 @@ class FloatWindow(QWidget):
         self.update()
 
     def _tooltip(self):
-        """A hover summary: every account's model, its quota and any error."""
+        """A hover summary: every account's quota and any error."""
         lines = []
         for row in self.rows:
             used = ', '.join(f"{meter['label']} {float_model.percent_text(meter['used_percent'])}"
                              for meter in row['meters'])
-            line = f"{row['name']}: {used}"
-            if row.get('model'):
-                line += f" · {row['model']}"
-            lines.append(line)
+            lines.append(f"{row['name']}: {used}")
             if row.get('error'):
                 lines.append(f"{row['name']}: {row['error']}")
         if not lines:
@@ -122,11 +155,10 @@ class FloatWindow(QWidget):
     # Layout ---------------------------------------------------------------
 
     def _widths(self):
-        name_metrics, badge_metrics, meter_metrics = QFontMetrics(self.font_name), QFontMetrics(self.font_badge), QFontMetrics(self.font_meter)
+        name_metrics, meter_metrics = QFontMetrics(self.font_name), QFontMetrics(self.font_meter)
         name_width = meter_width = 0
         for row in self.rows:
-            name_width = max(name_width, name_metrics.horizontalAdvance(row['name']),
-                             badge_metrics.horizontalAdvance(row['model'] or ''))
+            name_width = max(name_width, name_metrics.horizontalAdvance(row['name']))
             for meter in row['meters']:
                 meter_width = max(meter_width, meter_metrics.horizontalAdvance(meter['label']) + 18
                                   + meter_metrics.horizontalAdvance('100%'))
@@ -147,9 +179,8 @@ class FloatWindow(QWidget):
 
     def _heights(self):
         """The height of the name block and of the meters."""
-        name_metrics, badge_metrics, meter_metrics = (QFontMetrics(self.font_name), QFontMetrics(self.font_badge),
-                                                      QFontMetrics(self.font_meter))
-        name_height = name_metrics.height() + badge_metrics.height()
+        name_metrics, meter_metrics = QFontMetrics(self.font_name), QFontMetrics(self.font_meter)
+        name_height = name_metrics.height()
         meter_height = (meter_metrics.height() + BAR_HEIGHT) * METER_SLOTS + METER_GAP_Y * (METER_SLOTS - 1)
         return name_height, meter_height
 
@@ -185,8 +216,7 @@ class FloatWindow(QWidget):
         if not self.rows:
             self._paint_message(painter)
             return
-        name_metrics, badge_metrics, meter_metrics = (QFontMetrics(self.font_name), QFontMetrics(self.font_badge),
-                                                      QFontMetrics(self.font_meter))
+        name_metrics, meter_metrics = QFontMetrics(self.font_name), QFontMetrics(self.font_meter)
         name_height, meter_height = self._heights()
         content_height = max(name_height, meter_height)
         top = (self.height() - content_height) / 2
@@ -200,12 +230,9 @@ class FloatWindow(QWidget):
             painter.setBrush(accent)
             painter.drawRoundedRect(bar, ACCENT_WIDTH / 2, ACCENT_WIDTH / 2)
             name_x = column['name_x']
-            self._paint_text(painter, self.font_name, QRectF(name_x, top, name_width, name_metrics.height()),
+            name_top = top + (content_height - name_metrics.height()) / 2
+            self._paint_text(painter, self.font_name, QRectF(name_x, name_top, name_width, name_metrics.height()),
                              row['name'], float_model.TEXT)
-            if row['model']:
-                self._paint_text(painter, self.font_badge,
-                                 QRectF(name_x, top + name_metrics.height(), name_width, badge_metrics.height()),
-                                 row['model'], row['accent'])
             for slot, meter in enumerate(row['meters']):
                 x = column['meters_x'] + slot * (meter_width + METER_GAP)
                 self._paint_text(painter, self.font_meter, QRectF(x, top, meter_width, meter_metrics.height()),
@@ -266,7 +293,7 @@ class FloatWindow(QWidget):
         menu = QMenu(self)
         menu.addAction('Open dashboard', self.open_dashboard)
         menu.addAction('Refresh now', self.poll)
-        menu.addAction('Quit', self.close)
+        menu.addAction('Quit', self.quit)
         menu.exec(event.globalPos())
 
     def open_dashboard(self):
@@ -312,14 +339,38 @@ class FloatWindow(QWidget):
         super().closeEvent(event)
 
 
+def post_setting(url, enabled):
+    """Tell the collector whether the widget is wanted. Failures are ignored: the widget is closing anyway."""
+    request = urllib.request.Request(url, data=json.dumps({'enabled': enabled}).encode(), method='POST',
+                                     headers={'Content-Type': 'application/json'})
+    try:
+        urllib.request.urlopen(request, timeout=3).close()
+    except Exception:
+        pass
+
+
+def acquire_lock(folder):
+    """Hold the single-instance lock, or return None when another widget already has it."""
+    lock = QLockFile(str(Path(folder) / 'float.lock'))
+    lock.setStaleLockTime(0)  # a lock from a dead process is still reclaimed; a live one is never stolen
+    return lock if lock.tryLock(0) else None
+
+
 def run(url, position_file=None):
     """Show the widget until it is closed. Returns an exit code."""
+    lock = None
+    if position_file:
+        Path(position_file).parent.mkdir(parents=True, exist_ok=True)
+        lock = acquire_lock(Path(position_file).parent)
+        if lock is None:
+            return ALREADY_RUNNING
     # Plain executables must stay out of the macOS Dock and app switcher.
     if sys.platform == 'darwin':
         os.environ['QT_MAC_DISABLE_FOREGROUND_APPLICATION_TRANSFORM'] = '1'
     app = QApplication.instance() or QApplication(sys.argv)
     app.setApplicationName('Token Observatory')
-    window = FloatWindow(url, position_file=position_file)
+    from backend.services.widget_control import MANAGED
+    window = FloatWindow(url, position_file=position_file, managed=os.environ.get(MANAGED) == '1')
     if not window.restored:
         screen = app.primaryScreen()
         area = screen.availableGeometry() if screen else None
@@ -327,4 +378,7 @@ def run(url, position_file=None):
             window.move(area.right() - window.width() - 24, area.top() + 10)
     window.show()
     window.poll()
-    return app.exec()
+    code = app.exec()
+    if lock is not None:
+        lock.unlock()
+    return code

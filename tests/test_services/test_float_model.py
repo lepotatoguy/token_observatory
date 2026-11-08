@@ -80,3 +80,23 @@ def test_message_reports_a_failed_check():
 
 def test_message_is_empty_when_there_is_something_to_show():
     assert float_model.message(payload(providers=[provider()])) is None
+
+
+def test_follow_keeps_running_while_the_setting_is_on():
+    assert float_model.follow({'enabled': True}, 2) == (False, 0)
+
+
+def test_follow_quits_when_the_setting_turns_off():
+    assert float_model.follow({'enabled': False}, 0) == (True, 0)
+
+
+def test_follow_quits_after_three_unreachable_polls():
+    quit_now, misses = False, 0
+    for expected in (False, False, True):
+        quit_now, misses = float_model.follow(None, misses)
+        assert quit_now is expected
+    assert misses == 3
+
+
+def test_follow_ignores_a_malformed_setting():
+    assert float_model.follow({'enabled': 'no'}, 1) == (False, 0)

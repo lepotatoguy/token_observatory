@@ -25,6 +25,9 @@ type Part = {
   shrinkage?: number;
   pairs?: number;
   backtest?: { model_mae: number; baseline_mae: number; days: number } | null;
+  calibration?: "single" | "by_type" | null;
+  rolling?: { mae_points: number; single_mae_points: number; readings: number } | null;
+  check?: { within: number; scored: number } | null;
 };
 export function suggestedBudget(snapshot: Snapshot, now: number) {
   const parts: { provider: string; daily: number; estimated: boolean }[] = [],
@@ -82,8 +85,11 @@ export function combineBudget(
         shrinkage: f.shrinkage,
         pairs: f.calibration_pairs,
         backtest: f.backtest,
+        calibration: f.calibration_kind,
+        rolling: f.rolling,
+        check: f.budget_check,
       });
-    else if (even) parts.push({ ...even, source: "even" });
+    else if (even) parts.push(forecast ? { ...even, source: "even" } : even);
   }
   return {
     parts,
@@ -91,19 +97,66 @@ export function combineBudget(
     total: parts.reduce((n, p) => n + p.daily, 0),
   };
 }
-/** Which algorithm produced a provider's forecast, and how well it predicted that provider's own recent days. */
-export function methodNote(part: Part) {
-  const test = part.backtest,
-    algorithm =
-      part.method === "weekday_regression"
-        ? `weekday regression (shrinkage ${part.shrinkage})`
-        : test
-          ? "even split across the remaining days (no weekday pattern beat the flat baseline)"
-          : "even split across the remaining days",
-    loss = test
-      ? `usage-prediction error ${compact(test.model_mae)} tokens a day over ${test.days} test days (flat baseline ${compact(test.baseline_mae)})`
-      : "accuracy not measured yet (needs 18 days of history)";
-  return `${providerName(part.provider)}: ${algorithm}; tokens per percent from ${part.pairs} readings over ${part.days} days; ${loss}.`;
+/** Plain-language account of the forecast: which model ran, how it scored on the user's own days, and who fell back. */
+export function forecastExplanation(parts: Part[]) {
+  const used = parts.filter((p) => p.source === "forecast"),
+    simple = parts.filter((p) => p.source === "even"),
+    names = (list: Part[]) => list.map((p) => providerName(p.provider)).join(", "),
+    scored = used.filter((p) => p.backtest),
+    weekday = used.filter((p) => p.method === "weekday_regression"),
+    flat = used.filter((p) => p.method !== "weekday_regression" && p.backtest),
+    unscored = used.filter((p) => !p.backtest),
+    text: string[] = [];
+  if (used.length) {
+    text.push(
+      "How it is forecast: a small regression model (ridge-style) learns how much you use on each weekday from your last 30 days, and the weekly limit you have left is spread over the days until reset accordingly.",
+    );
+    if (scored.length)
+      text.push(
+        `Loss (mean absolute error on days it had not seen): ${scored
+          .map(
+            (p) =>
+              `${providerName(p.provider)} ${compact(p.backtest!.model_mae)} tokens a day against ${compact(p.backtest!.baseline_mae)} for a flat guess over ${p.backtest!.days} days`,
+          )
+          .join("; ")}.`,
+      );
+    if (weekday.length)
+      text.push(
+        `${names(weekday)}: the weekday pattern beat the flat guess, so heavier days get a bigger share.`,
+      );
+    if (flat.length)
+      text.push(
+        `${names(flat)}: no weekday pattern beat the flat guess, so days are weighted evenly.`,
+      );
+    if (unscored.length)
+      text.push(
+        `${names(unscored)}: too few days to score yet (needs 18), so days are weighted evenly.`,
+      );
+  }
+  if (simple.length)
+    text.push(
+      `${names(simple)}: too little history for the forecast, so a simple estimate from this week's usage is used.`,
+    );
+  return text.join(" ");
+}
+/** How each forecast provider's tokens-per-percent was learned, how well it predicted past readings, and past days within budget. */
+export function calibrationNote(parts: Part[]) {
+  const lines = parts
+    .filter((p) => p.source === "forecast" && p.calibration)
+    .map((p) => {
+      const how =
+          p.calibration === "by_type"
+            ? "learns how much each kind of token (new input, cached input, output) costs your limit"
+            : "uses one tokens-per-percent ratio (too few readings, or the detailed method was not more accurate)",
+        error = p.rolling
+          ? `; it predicted past weekly-limit changes within ${p.rolling.mae_points.toFixed(1)} points (one ratio: ${p.rolling.single_mae_points.toFixed(1)}) over ${p.rolling.readings} ${p.rolling.readings === 1 ? "reading" : "readings"}`
+          : "",
+        days = p.check
+          ? `; you stayed within the day's budget on ${p.check.within} of ${p.check.scored} past days`
+          : "";
+      return `${providerName(p.provider)}: ${how}${error}${days}.`;
+    });
+  return lines.length ? `Calibration: ${lines.join(" ")}` : "";
 }
 function useForecast(active: boolean) {
   const [forecast, setForecast] = useState<Forecast | null>(null);
@@ -325,28 +378,27 @@ export function BudgetPanel({
       {suggested.total ? (
         <>
           <p className="insight-note">
-            Suggested: <strong>{compact(suggested.total)}</strong> a day (
+            Suggested daily budget from your weekly limits:{" "}
+            <strong>{compact(suggested.total)}</strong> a day (
             {suggested.parts
               .map(
                 (p) =>
-                  `${providerName(p.provider)} ${compact(p.daily)}${p.estimated ? " (estimated reset)" : ""}${p.source === "even" ? " (even split)" : ""}`,
+                  `${providerName(p.provider)} ${compact(p.daily)}${p.estimated ? " (estimated reset)" : ""}${p.source === "even" ? " (simple estimate)" : ""}`,
               )
               .join(" + ")}
-            ) to stay within weekly limits until reset.{" "}
-            {suggested.parts.some((p) => p.source === "forecast")
-              ? "Forecast from your usage history."
-              : "Estimated from quota snapshots and logged usage."}
+            ). Spending this much each day makes your remaining weekly limit
+            last until it resets.
             {suggested.missing.length
               ? ` ${suggested.missing.map(providerName).join(", ")} excluded: no usable weekly quota.`
               : ""}
           </p>
-          {suggested.parts
-            .filter((p) => p.source === "forecast")
-            .map((p) => (
-              <p key={p.provider} className="insight-note">
-                {methodNote(p)}
-              </p>
-            ))}
+          <p className="insight-note">
+            {forecastExplanation(suggested.parts) ||
+              "Estimated from quota snapshots and logged usage."}
+          </p>
+          {calibrationNote(suggested.parts) && (
+            <p className="insight-note">{calibrationNote(suggested.parts)}</p>
+          )}
         </>
       ) : (
         <p className="insight-note">

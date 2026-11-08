@@ -4,6 +4,21 @@ All notable changes to Token Observatory. Versions follow [Semantic Versioning](
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-11-08
+### Added
+- A **Floating widget** switch in Settings. The collector starts the widget while the switch is on and restarts it if it stops; the widget closes itself when the switch is turned off or the collector is gone, and Quit from its menu turns the switch off.
+- A **Check for updates** button in Settings that checks immediately instead of waiting for the daily check, and reports the result.
+- **Window warm-up** (opt-in, off by default) for Claude, Codex and MiniMax: at daily local times you choose, Token Observatory sends "hello" to the provider's cheapest model so the five-hour window starts when you want. It skips a send when a window is already active, catches up a missed time within 30 minutes, and only runs while Token Observatory is running. Claude uses Haiku at low effort and Codex uses low reasoning effort. When the five-hour limit is already used up at the scheduled time, the message waits and is sent one minute after the window resets. MiniMax warm-up is shown as unavailable until its request path and cheapest model are verified.
+
+### Changed
+- The floating widget no longer shows model names, only each account's name and its session and weekly meters.
+- Qt (PySide6) is now a required dependency and is bundled in the macOS, Windows and Linux builds, so the widget works without extra install steps. `--with-float`, `TOKEN_OBSERVATORY_WITH_FLOAT` and the `float` extra are accepted and ignored. The `.deb` now depends on the Qt system libraries.
+
+### Fixed
+- The floating widget now follows your real quota closely. Account limits were re-read from Claude, Codex and MiniMax only every five minutes, so the meters lagged. While the widget is running they refresh every 2 seconds; without it the five-minute rhythm is unchanged.
+- The Claude session hook could never read live usage: the lookup had a one-second limit and `claude /usage` takes about 1.2 seconds. It now waits up to 2.4 seconds, so the hook reports real usage.
+- The hook text no longer reads like current usage. It says the 5-hour and weekly numbers are configured thresholds ("Pause when 5-hour usage reaches 99%"), not how much you have used.
+
 ## [1.6.1] - 2026-11-06
 ### Fixed
 - Claude Code limits no longer show a placeholder 0% when the Claude desktop app has no account data, and live or status line answers older than 24 hours are dropped.
