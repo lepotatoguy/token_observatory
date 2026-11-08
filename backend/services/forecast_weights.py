@@ -98,7 +98,8 @@ def fit_nnls(pairs):
     gram = [[sum(p.tokens[i] * p.tokens[j] for p in pairs) for j in range(4)] for i in range(4)]
     moment = [sum(p.tokens[i] * p.rise for p in pairs) for i in range(4)]
     scale = max(gram[i][i] for i in range(4)) or 1.0
-    best, best_error = (0.0,) * 4, sum(p.rise ** 2 for p in pairs)
+    squares = sum(p.rise ** 2 for p in pairs)
+    best, best_error = (0.0,) * 4, squares
     for mask in range(1, 16):
         columns = [i for i in range(4) if mask >> i & 1]
         small = [[gram[i][j] + (RIDGE * scale if i == j else 0.0) for j in columns] for i in columns]
@@ -108,7 +109,9 @@ def fit_nnls(pairs):
         weights = [0.0] * 4
         for i, value in zip(columns, solved):
             weights[i] = value
-        error = sum((p.rise - sum(w * t for w, t in zip(weights, p.tokens))) ** 2 for p in pairs)
+        # Squared error from the sums already in hand: |y|^2 - 2 w.m + w'Gw, with no pass over the pairs.
+        error = squares - 2 * sum(weights[i] * moment[i] for i in columns) \
+            + sum(weights[i] * weights[j] * gram[i][j] for i in columns for j in columns)
         if error < best_error - 1e-12:
             best, best_error = tuple(weights), error
     return best

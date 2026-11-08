@@ -17,7 +17,21 @@ def daily_file(template, day):
     return gzip.compress(text.encode(), compresslevel=1)
 
 
-def test_a_cold_fit_over_thirty_five_megabyte_days_is_quick_and_a_warm_request_is_instant(tmp_path):
+def timed_loads(monkeypatch):
+    """Total seconds spent in Archive.load (gunzip + JSON decode), the part no fit can avoid."""
+    spent, original = [0.0], Archive.load
+
+    def load(self, name):
+        started = time.perf_counter()
+        try:
+            return original(self, name)
+        finally:
+            spent[0] += time.perf_counter() - started
+    monkeypatch.setattr(Archive, 'load', load)
+    return spent
+
+
+def test_a_cold_fit_over_thirty_five_megabyte_days_is_quick_and_a_warm_request_is_instant(tmp_path, monkeypatch):
     event = dict(at='@AT@', input=1200, cached=3400, write=560, output=780, reasoning=90, model='claude-sonnet-4', thread_id='@ID@')
     template = json.dumps(dict(at=NOW, limits={}, sessions=[dict(id='claude:@ID@', provider='claude', events=[event] * EVENTS_PER_FILE)]))
     assert len(template) > 4_500_000 * 1
@@ -32,6 +46,7 @@ def test_a_cold_fit_over_thirty_five_megabyte_days_is_quick_and_a_warm_request_i
     store = SimpleNamespace(read=lambda: snapshot, archive=Archive(history), plan_usage=SimpleNamespace(samples=lambda: []))
     service = forecast.Forecaster(store, tmp_path)
 
+    loads = timed_loads(monkeypatch)
     started = time.perf_counter()
     service.payload(now=NOW)
     cold = time.perf_counter() - started
@@ -40,5 +55,5 @@ def test_a_cold_fit_over_thirty_five_megabyte_days_is_quick_and_a_warm_request_i
     warm = time.perf_counter() - started
 
     assert body['providers']['claude']['days_used'] == 30
-    assert cold < 3, f'cold fit took {cold:.2f}s'
+    assert cold < 3, f'cold fit took {cold:.2f}s, of which {loads[0]:.2f}s was reading the archive'
     assert warm < 0.05, f'warm request took {warm:.3f}s'
