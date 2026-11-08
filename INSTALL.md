@@ -95,17 +95,11 @@ Example:
 
 ### Floating widget
 
-A small always-on-top pill shows every enabled account's model, how much of its 5-hour and weekly quota is used, and when it resets. It floats over your other windows on macOS, Windows and Linux, and reads the same numbers as the dashboard.
+A small always-on-top pill shows every enabled account's 5-hour and weekly quota use, and when it resets. It floats over your other windows on macOS, Windows and Linux, and reads the same numbers as the dashboard.
 
-The widget needs Qt, which is an optional extra. Install it once:
+Qt ships with Token Observatory on every platform, so the widget needs no extra install. Turn it on with the **Floating widget** switch in **Settings**; the collector then starts the pill and restarts it if it stops. Turning the switch off, or choosing **Quit** from the pill's menu, closes it.
 
-| Install | Command |
-|---|---|
-| From source | `python3 -m pip install -e '.[float]'` |
-| macOS or Linux source install | `TOKEN_OBSERVATORY_WITH_FLOAT=1 ./install.sh` |
-| macOS app bundle | `python3 build_app.py --with-float` |
-
-Then start it next to the dashboard:
+You can also start it by hand, which ignores the switch and keeps running until you close it:
 
 | Install | Command |
 |---|---|
@@ -116,7 +110,7 @@ Then start it next to the dashboard:
 
 `--float` starts the collector if it isn't running, then shows the pill until you close it. Drag the pill to move it; the position is remembered in the data folder. Double-click it to open the dashboard, and right-click for a menu with **Open dashboard**, **Refresh now** and **Quit**.
 
-Standalone release builds don't include the widget unless PySide6 is installed in the build environment before packaging. Without it, `--float` says so instead of failing.
+If the Qt runtime cannot be loaded, the Settings switch is disabled and shows why. The widget's own log is `widget.log` in the data folder.
 
 ### Local LLMs
 

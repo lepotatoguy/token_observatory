@@ -152,6 +152,54 @@ class CheckAndPreferenceTests(unittest.TestCase):
         self.assertIsNone(updates.status()['latest'])
         self.assertTrue(printed.called)
 
+    def test_manual_check_ignores_the_daily_interval(self):
+        updates = self.make()
+        updates.check()
+        self.clock.now += 60
+        status = updates.check_now()
+        self.assertEqual(len(self.calls), 2)
+        self.assertEqual(status['latest']['version'], '1.3.0')
+
+    def test_manual_check_ignores_the_notify_preference(self):
+        updates = self.make()
+        updates.set_preferences({'notify': False}, recheck=False)
+        updates.check_now()
+        self.assertEqual(len(self.calls), 1)
+
+    def test_manual_checks_less_than_five_seconds_apart_share_one_request(self):
+        updates = self.make()
+        first = updates.check_now()
+        self.clock.now += 4
+        second = updates.check_now()
+        self.assertEqual(len(self.calls), 1)
+        self.assertEqual(first['checked_at'], second['checked_at'])
+        self.clock.now += 2
+        updates.check_now()
+        self.assertEqual(len(self.calls), 2)
+
+    def test_manual_check_is_a_no_op_when_the_environment_disables_checks(self):
+        os.environ['TOKEN_OBSERVATORY_UPDATE_CHECKS'] = '0'
+        status = self.make().check_now()
+        self.assertEqual(self.calls, [])
+        self.assertFalse(status['checks'])
+
+    def test_failed_manual_check_keeps_the_known_release(self):
+        updates = self.make()
+        updates.check()
+        self.clock.now += 60
+        self.answer = OSError('offline')
+        with patch('builtins.print'):
+            status = updates.check_now()
+        self.assertIn('offline', status['error'])
+        self.assertEqual(status['latest']['version'], '1.3.0')
+
+    def test_manual_check_with_no_newer_release_reports_none(self):
+        self.answer = release('1.2.2')
+        status = self.make().check_now()
+        self.assertIsNone(status['latest'])
+        self.assertIsNone(status['error'])
+        self.assertEqual(status['current'], '1.2.2')
+
     def test_environment_switch_disables_checks(self):
         os.environ['TOKEN_OBSERVATORY_UPDATE_CHECKS'] = '0'
         updates = self.make()

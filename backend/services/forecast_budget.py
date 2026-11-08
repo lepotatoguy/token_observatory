@@ -57,7 +57,10 @@ def entry(state, snapshot, provider, now):
     demand = saved.get('demand') or {}
     info = dict(demand_method=demand.get('method', 'flat'), confidence=saved.get('confidence', 'low'),
                 days_used=saved.get('days_used', 0), calibration=None, calibration_pairs=saved.get('calibration_pairs', 0),
-                shrinkage=demand.get('shrinkage', 0.0), backtest=demand.get('backtest'), estimated=False, daily=None, share=None,
+                shrinkage=demand.get('shrinkage', 0.0), backtest=demand.get('backtest'),
+                calibration_kind=(saved.get('calibration_model') or {}).get('kind'),
+                calibration_readings=(saved.get('calibration_model') or {}).get('readings', saved.get('calibration_pairs', 0)),
+                rolling=saved.get('rolling'), budget_check=saved.get('budget_check'), estimated=False, daily=None, share=None,
                 start_of_day_capacity=None, remaining_capacity=None, used_today=None, excluded=None,
                 warnings=list(saved.get('warnings') or []))
     limits = (snapshot.get('limits') or {}).get(provider)

@@ -13,6 +13,7 @@ Architecture: {arch}
 Maintainer: Joyanta Mondal <mjoyanta.cs@gmail.com>
 Section: devel
 Priority: optional
+Depends: libegl1, libopengl0, libxkbcommon-x11-0, libxcb-cursor0, libfontconfig1, libdbus-1-3
 Homepage: https://github.com/lepotatoguy/token_observatory
 Description: Local token usage dashboard for Claude Code, Codex and local LLMs
  Reads the session logs Claude Code and Codex write on this machine, counts

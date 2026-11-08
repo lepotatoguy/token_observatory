@@ -26,6 +26,7 @@ class Sample:
 @dataclass(frozen=True)
 class History:
     events: dict      # provider -> sorted [(seconds, tokens)] inside the history window, today included
+    typed: dict       # provider -> sorted [(seconds, input, cached, write, output)], the same events split by token type
     series: dict      # provider -> daily totals, oldest first, ending yesterday
     first_day: dict   # provider -> date of the first recorded event inside the window
     samples: dict     # provider -> [Sample] sorted by time
@@ -54,6 +55,7 @@ def collect(snapshot, archive, plan_samples, today, providers, days=WINDOW_DAYS)
     start = dt.datetime.combine(first, dt.time()).timestamp()
     seen, warnings, marks = set(), [], set()
     rows = {provider: [] for provider in providers}
+    typed_rows = {provider: [] for provider in providers}
     samples = {}
     skipped = 0
 
@@ -82,7 +84,9 @@ def collect(snapshot, archive, plan_samples, today, providers, days=WINDOW_DAYS)
                 if not is_time(at):
                     skipped += 1
                 elif at >= start:
-                    rows[provider].append((at, sum(number(event.get(field)) for field in COUNTED)))
+                    values = [number(event.get(field)) for field in COUNTED]
+                    rows[provider].append((at, sum(values)))
+                    typed_rows[provider].append((at, *values))
         for provider, limits in (snap.get('limits') or {}).items():
             if isinstance(limits, dict):
                 add_sample(provider, limits.get('observed_at'), weekly(limits))
@@ -104,12 +108,13 @@ def collect(snapshot, archive, plan_samples, today, providers, days=WINDOW_DAYS)
     for t, _five, seven in plan_samples:
         add_sample('claude', t, dict(used_percent=seven, resets_at=None))
 
-    events, series, first_day = {}, {}, {}
+    events, typed, series, first_day = {}, {}, {}, {}
     for provider, found in rows.items():
         if not found:
             continue
         found.sort()
         events[provider] = found
+        typed[provider] = sorted(typed_rows[provider])
         totals = {}
         for at, tokens in found:
             day = day_of(at)
@@ -120,4 +125,4 @@ def collect(snapshot, archive, plan_samples, today, providers, days=WINDOW_DAYS)
             series[provider] = [totals.get(begin + dt.timedelta(days=i), 0) for i in range((today - begin).days)]
             first_day[provider] = begin
     ordered = {provider: sorted(found, key=lambda sample: sample.t) for provider, found in samples.items()}
-    return History(events, series, first_day, ordered, skipped, warnings)
+    return History(events, typed, series, first_day, ordered, skipped, warnings)

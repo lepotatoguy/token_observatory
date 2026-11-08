@@ -154,3 +154,20 @@ def test_the_inputs_are_never_changed():
 def test_the_body_carries_the_date_and_the_fit_time():
     body = fb.budget(flat_state(), snapshot(), NOW)
     assert body['date'] == '2026-11-05' and body['generated_at'] == 1.0
+
+
+def test_the_calibration_method_and_scores_pass_through_unchanged():
+    state = flat_state()
+    state['providers']['claude'].update(
+        calibration_model=dict(kind='by_type', weights=[1, 2, 3, 4], mix=None, readings=33, loo_single=2.0, loo_by_type=1.0),
+        rolling=dict(mae_points=1.5, single_mae_points=2.0, readings=14), budget_check=dict(within=9, scored=12))
+    result = entry(state, snapshot())
+    assert (result['calibration_kind'], result['calibration_readings']) == ('by_type', 33)
+    assert result['rolling'] == dict(mae_points=1.5, single_mae_points=2.0, readings=14)
+    assert result['budget_check'] == dict(within=9, scored=12)
+
+
+def test_a_state_without_the_new_keys_gives_null_scores():
+    result = entry(flat_state(), snapshot())
+    assert (result['calibration_kind'], result['rolling'], result['budget_check']) == (None, None, None)
+    assert result['calibration_readings'] == 5

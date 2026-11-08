@@ -2,6 +2,8 @@ import type { Snapshot, Pricing, UpdateStatus } from "../types/snapshot";
 import type { ProviderStatus, ProviderChoice } from "../types/providers";
 import type { LimitControl, LimitSettings } from "../types/limits";
 import type { Forecast } from "../types/forecast";
+import type { WidgetStatus } from "../types/widget";
+import type { WarmupStatus, WarmupUpdate } from "../types/warmup";
 async function request<T>(path: string, body?: unknown): Promise<T> {
   const response = await fetch(path, {
     cache: "no-store",
@@ -43,7 +45,13 @@ export const api = {
   update: () => request<UpdateStatus>("/api/update"),
   saveUpdate: (v: { notify?: boolean; dismiss?: string }) =>
     request<UpdateStatus>("/api/update/settings", v),
+  checkUpdate: () => request<UpdateStatus>("/api/update/check", {}),
   installUpdate: () => request<UpdateStatus>("/api/update/install", {}),
+  widget: () => request<WidgetStatus>("/api/widget"),
+  setWidget: (enabled: boolean) =>
+    request<WidgetStatus>("/api/widget", { enabled }),
+  warmup: () => request<WarmupStatus>("/api/warmup"),
+  setWarmup: (v: WarmupUpdate) => request<WarmupStatus>("/api/warmup", v),
   forecast: (refresh = false) =>
     request<Forecast>(refresh ? "/api/forecast?refresh=1" : "/api/forecast"),
   health: () => request<{ app: string; version: number }>("/api/health"),

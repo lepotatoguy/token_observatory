@@ -1,13 +1,13 @@
 """Start the floating usage widget.
 
 The widget reads the local collector over loopback, so the collector has to be
-running. PySide6 is optional: without it this explains how to install it
-instead of failing with a stack trace.
+running. PySide6 ships with Token Observatory; if it is missing this explains
+how to restore it instead of failing with a stack trace.
 """
 import importlib
 import sys
 
-INSTALL_HINT = "The floating widget needs PySide6: pip install 'token-observatory[float]'"
+INSTALL_HINT = "The floating widget needs PySide6. Reinstall Token Observatory, or run: pip install 'PySide6-Essentials>=6.5,<7'"
 
 
 def available():

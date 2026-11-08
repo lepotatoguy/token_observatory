@@ -7,7 +7,7 @@ import tempfile
 import threading
 import time
 
-from backend.services import forecast_budget, forecast_calibrate, forecast_demand, forecast_history
+from backend.services import forecast_budget, forecast_demand, forecast_history, forecast_score, forecast_weights
 
 SCHEMA = 1
 REFIT_SECONDS = 60
@@ -17,6 +17,10 @@ FILE = 'forecast.json'
 def valid(state, today):
     return (isinstance(state, dict) and state.get('schema_version') == SCHEMA and state.get('date') == today
             and isinstance(state.get('providers'), dict) and isinstance(state.get('warnings'), list))
+
+
+def backtest(test):
+    return dict(model_mae=test.model_mae, baseline_mae=test.baseline_mae, days=test.days) if test else None
 
 
 class Forecaster:
@@ -56,6 +60,34 @@ class Forecaster:
                 except OSError:
                     pass
 
+    def calibrate(self, history, provider, demand, today):
+        """The stored calibration of one provider: tokens per percent, the method behind it, and its held-out scores."""
+        typed = history.typed.get(provider, [])
+        index = forecast_weights.Index(typed)
+        samples = history.samples.get(provider, [])
+        pairs = forecast_weights.typed_pairs(samples, typed, index)
+        choice = forecast_weights.choose(pairs)
+        if choice is None:
+            return dict(tokens_per_percent=None, calibration_pairs=0, calibration_model=None, rolling=None, budget_check=None)
+        value, mix = forecast_weights.single_tokens_per_percent(pairs), None
+        kind, weights = choice.kind, choice.weights
+        if kind == 'by_type':
+            mix = forecast_weights.recent_mix(index, today) or forecast_weights.pairs_mix(pairs)
+            effective = forecast_weights.effective_tokens_per_percent(weights, mix) if mix else None
+            if effective is None:
+                kind, weights, mix = 'single', None, None
+            else:
+                value = effective
+        rolling = forecast_score.rolling_errors(pairs, kind)
+        check = forecast_score.day_check(samples, index, pairs, kind, demand.weekday_weights, today)
+        return dict(
+            tokens_per_percent=value, calibration_pairs=len(pairs),
+            calibration_model=dict(kind=kind, weights=list(weights) if weights else None, mix=list(mix) if mix else None,
+                                   readings=len(pairs), loo_single=choice.loo_single, loo_by_type=choice.loo_by_type),
+            rolling=dict(mae_points=rolling.mae_points, single_mae_points=rolling.single_mae_points,
+                         readings=rolling.readings) if rolling else None,
+            budget_check=dict(within=check.within, scored=check.scored) if check else None)
+
     def fit(self, snapshot, now):
         today = dt.datetime.fromtimestamp(now).date()
         enabled = [p for p in forecast_budget.PROVIDERS if p in ((snapshot.get('providers') or {}).get('enabled') or [])]
@@ -63,14 +95,10 @@ class Forecaster:
         providers = {}
         for provider in enabled:
             demand = forecast_demand.fit_demand(history.series.get(provider, []), today - dt.timedelta(days=1))
-            calibration = forecast_calibrate.tokens_per_percent(history.samples.get(provider, []), history.events.get(provider, []))
-            test = demand.backtest
-            providers[provider] = dict(
-                days_used=demand.days_used, confidence=demand.confidence,
-                tokens_per_percent=calibration.value if calibration else None,
-                calibration_pairs=calibration.pairs if calibration else 0,
-                demand=dict(method=demand.method, weekday_weights=list(demand.weekday_weights), shrinkage=demand.shrinkage,
-                            backtest=dict(model_mae=test.model_mae, baseline_mae=test.baseline_mae, days=test.days) if test else None))
+            providers[provider] = dict(days_used=demand.days_used, confidence=demand.confidence,
+                                       **self.calibrate(history, provider, demand, today),
+                                       demand=dict(method=demand.method, weekday_weights=list(demand.weekday_weights),
+                                                   shrinkage=demand.shrinkage, backtest=backtest(demand.backtest)))
         state = dict(schema_version=SCHEMA, date=today.isoformat(), generated_at=now, skipped_events=history.skipped_events,
                      warnings=list(history.warnings), providers=providers)
         self.save(state)

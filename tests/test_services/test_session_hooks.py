@@ -178,6 +178,17 @@ class LifecycleTests(unittest.TestCase):
             self.assertIn('SAME conversation', out)
             self.assertNotIn('Pause substantive work', out)
 
+    def test_policy_text_labels_thresholds_as_settings_not_usage(self):
+        text = session_hooks.mode_policy('hard', 99, 3)
+        self.assertIn('settings, not current usage', text)
+        self.assertIn('Pause when 5-hour usage reaches 99%', text)
+        self.assertIn('weekly remaining quota falls to 3% or less', text)
+        self.assertNotIn('hard limit is 99% used', text)
+
+    def test_claude_lookup_timeout_fits_hook_limit(self):
+        self.assertGreater(session_hooks.CLAUDE_LOOKUP_SECONDS, 1.2)
+        self.assertLessEqual(2 * session_hooks.CLAUDE_LOOKUP_SECONDS, session_hooks.TIMEOUT)
+
     def test_user_confirmed_reset_when_lookup_unavailable(self):
         with tempfile.TemporaryDirectory() as folder:
             f = Fixture(folder)

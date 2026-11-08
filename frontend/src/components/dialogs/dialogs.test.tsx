@@ -16,7 +16,17 @@ beforeEach(() => localStorage.clear());
 describe("dialogs", () => {
   it("loads the saved theme and persists a new theme", () => {
     localStorage.setItem("to.theme", "dark");
-    render(<SettingsDialog />);
+    vi.spyOn(api, "widget").mockResolvedValue({
+      enabled: false,
+      available: true,
+      reason: null,
+      running: false,
+      starting: false,
+      error: null,
+    });
+    vi.spyOn(api, "update").mockResolvedValue({ current: "1.0", notify: true });
+    vi.spyOn(api, "warmup").mockRejectedValue(new Error("offline"));
+    render(<SettingsDialog />, { wrapper });
     expect(screen.getByRole("radio", { name: "Dark" })).toBeChecked();
     fireEvent.click(screen.getByRole("radio", { name: "Light" }));
     expect(document.documentElement.dataset.theme).toBe("light");

@@ -218,7 +218,7 @@ class MiniMaxTests(unittest.TestCase):
                 result = json.loads(session_hooks.run(io.StringIO(json.dumps(payload)), 'claude', folder, None, NOW))
             self.assertEqual(result['hookSpecificOutput']['permissionDecision'], 'deny')
             self.assertIn('MiniMax', result['systemMessage'])
-            self.assertIn('3% remaining (97% used)', result['hookSpecificOutput']['additionalContext'])
+            self.assertIn('weekly remaining quota falls to 3% or less (weekly usage 97% or more)', result['hookSpecificOutput']['additionalContext'])
 
 
 

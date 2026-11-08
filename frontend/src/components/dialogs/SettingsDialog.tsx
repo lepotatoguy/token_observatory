@@ -4,6 +4,9 @@ import { saved } from "../../utils/storage";
 import { applyTheme, type Theme } from "../../utils/theme";
 import { alertsEnabled, toggleAlerts } from "../../utils/notifications";
 import { Dialog } from "./Dialog";
+import { WidgetSection } from "./WidgetSection";
+import { UpdateSection } from "./UpdateSection";
+import { WarmupSection } from "./WarmupSection";
 export function SettingsDialog() {
   const s = useAppStore(),
     [theme, setTheme] = useState<Theme>(() => {
@@ -66,6 +69,9 @@ export function SettingsDialog() {
           through Limit controls.
         </p>
       </section>
+      <WidgetSection />
+      <UpdateSection />
+      <WarmupSection />
       <section className="settings-section">
         <h3>Notifications</h3>
         <button

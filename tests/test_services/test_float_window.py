@@ -128,3 +128,64 @@ def test_widget_stays_visible_without_becoming_a_foreground_app(app):
         assert window.testAttribute(Qt.WidgetAttribute.WA_MacAlwaysShowToolWindow)
     finally:
         window.close()
+
+
+def test_second_instance_cannot_take_the_lock(app, tmp_path):
+    first = float_window.acquire_lock(tmp_path)
+    assert first is not None
+    assert float_window.acquire_lock(tmp_path) is None
+    first.unlock()
+    again = float_window.acquire_lock(tmp_path)
+    assert again is not None
+    again.unlock()
+
+
+def test_polls_identify_the_widget_and_check_the_setting(app):
+    window = float_window.FloatWindow('http://127.0.0.1:9/api/quota', managed=True)
+    assert window.quota_url == 'http://127.0.0.1:9/api/quota?client=widget'
+    assert window.setting_url == 'http://127.0.0.1:9/api/widget'
+
+
+def test_unmanaged_widget_ignores_the_setting(app):
+    window = float_window.FloatWindow('http://127.0.0.1:9/api/quota')
+    window.follow({'enabled': False})
+    assert window.isVisible() is False and window.misses == 0
+    assert window.closing is False
+
+
+def test_managed_widget_closes_when_the_setting_turns_off(app):
+    window = float_window.FloatWindow('http://127.0.0.1:9/api/quota', managed=True)
+    window.follow({'enabled': False})
+    assert window.closing is True
+
+
+def test_managed_widget_closes_after_three_unreachable_polls(app):
+    window = float_window.FloatWindow('http://127.0.0.1:9/api/quota', managed=True)
+    for _ in range(2):
+        window.follow(None)
+    assert window.closing is False
+    window.follow(None)
+    assert window.closing is True
+
+
+def test_quit_from_the_menu_turns_the_setting_off_when_managed(app, monkeypatch):
+    sent = []
+    monkeypatch.setattr(float_window, 'post_setting', lambda url, enabled: sent.append((url, enabled)))
+    managed = float_window.FloatWindow('http://127.0.0.1:9/api/quota', managed=True)
+    managed.quit()
+    assert sent == [('http://127.0.0.1:9/api/widget', False)]
+    unmanaged = float_window.FloatWindow('http://127.0.0.1:9/api/quota')
+    unmanaged.quit()
+    assert len(sent) == 1
+
+
+def test_the_model_name_is_not_shown(app):
+    window = float_window.FloatWindow('http://127.0.0.1:1/api/quota')
+    window.apply(payload())
+    assert 'claude-opus-5-5' not in window.toolTip() and 'gpt-6.1-sol' not in window.toolTip()
+    short = window.width()
+    long_names = payload()
+    for provider in long_names['providers']:
+        provider['model'] = 'a-very-long-model-name-that-would-widen-the-pill-' * 3
+    window.apply(long_names)
+    assert window.width() == short

@@ -26,6 +26,7 @@ REPO = 'lepotatoguy/token_observatory'
 API_URL = f'https://api.github.com/repos/{REPO}/releases/latest'
 GITHUB_HOSTS = {'github.com', 'objects.githubusercontent.com', 'release-assets.githubusercontent.com', 'codeload.github.com'}
 CHECK_INTERVAL = 24 * 3600
+MANUAL_COALESCE = 5  # Seconds during which a repeated manual check reuses the last answer.
 START_INTERVAL = 3600  # A restart checks again only when the last check is older than this.
 TIMEOUT = 10
 MAX_DOWNLOAD = 300_000_000
@@ -181,6 +182,7 @@ class Updates:
         self.restart_command, self.before_restart, self.stop_server = restart_command or [], before_restart, stop_server
         self.endpoints = Endpoints()
         self.lock = threading.Lock()
+        self.manual_lock, self.manual_at = threading.Lock(), None
         self.progress = dict(state='idle', message='')
 
     def settings(self):
@@ -193,6 +195,10 @@ class Updates:
             return
         if self.clock() - (read_json(self.check_file).get('checked_at') or 0) < max_age:
             return
+        self.refresh()
+
+    def refresh(self, keep_known=False):
+        """Fetch the latest release and cache the answer. A failure keeps the known release when asked to."""
         try:
             answer, error = self.fetch(self.endpoints.api), None
             found = parse_release(answer, '0.0.0', self.endpoints)
@@ -200,7 +206,23 @@ class Updates:
             found, error = None, f'Update check failed: {failure}'
             print(error, flush=True)
         with self.lock:
+            if error and keep_known:
+                found = read_json(self.check_file).get('latest')
             write_json(self.check_file, dict(checked_at=self.clock(), latest=found, error=error))
+
+    def check_now(self):
+        """The Settings button: skips the daily interval and the notify preference, not the environment switch.
+
+        Presses less than MANUAL_COALESCE seconds apart share the first answer so the feed is not hammered.
+        """
+        if not checks_enabled():
+            return self.status()
+        with self.manual_lock:
+            now = self.clock()
+            if self.manual_at is None or now - self.manual_at >= MANUAL_COALESCE:
+                self.manual_at = now
+                self.refresh(keep_known=True)
+        return self.status()
 
     def latest(self):
         found = read_json(self.check_file).get('latest')

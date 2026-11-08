@@ -21,7 +21,7 @@ def test_the_endpoint_answers_with_a_budget_shape(client, app):
     assert {'date', 'generated_at', 'total', 'warnings', 'providers'} <= set(body)
     claude = body['providers']['claude']
     assert {'daily', 'share', 'confidence', 'demand_method', 'shrinkage', 'backtest', 'calibration', 'calibration_pairs',
-            'days_used', 'excluded', 'warnings'} <= set(claude)
+            'days_used', 'excluded', 'warnings', 'calibration_kind', 'calibration_readings', 'rolling', 'budget_check'} <= set(claude)
     assert claude['excluded'] == 'insufficient_data' and claude['daily'] is None
 
 

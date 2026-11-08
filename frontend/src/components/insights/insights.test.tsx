@@ -112,6 +112,9 @@ describe("forecast budget", () => {
     daily, share: 0.5, start_of_day_capacity: 1, remaining_capacity: 1, used_today: 0,
     demand_method: "flat" as const, calibration: "history" as const, calibration_pairs: 6, shrinkage: 0,
     backtest: { model_mae: 42500000, baseline_mae: 42500000, days: 16 } as { model_mae: number; baseline_mae: number; days: number } | null,
+    calibration_kind: "single" as "single" | "by_type" | null, calibration_readings: 6,
+    rolling: null as { mae_points: number; single_mae_points: number; readings: number } | null,
+    budget_check: null as { within: number; scored: number } | null,
     confidence: "normal" as const, days_used: 22, estimated: false, warnings: [],
     excluded: null as "no_weekly_quota" | "insufficient_data" | null, ...extra,
   });
@@ -123,34 +126,65 @@ describe("forecast budget", () => {
     render(<BudgetPanel snapshot={two()} now={now} />);
     await waitFor(() => expect(screen.getByTestId("budget-zone-claude")).toHaveStyle({ flexGrow: "5000" }));
     expect(screen.getByTestId("budget-zone-codex")).toHaveStyle({ flexGrow: "3000" });
-    expect(screen.getByText(/Forecast from your usage history/)).toBeInTheDocument();
+    expect(screen.getByText(/How it is forecast: a small regression model/)).toBeInTheDocument();
     fireEvent.click(screen.getByText("Use suggested"));
     expect(localStorage.getItem("to.dailyBudget")).toBe("8000");
   });
-  it("names the algorithm and its measured error for each forecast provider", async () => {
+  it("explains the model in plain words with the measured loss for each provider", async () => {
     vi.spyOn(api, "forecast").mockResolvedValue(forecast({
       claude: part(5000),
       codex: part(3000, { demand_method: "weekday_regression", shrinkage: 0.5, backtest: { model_mae: 1500000, baseline_mae: 2000000, days: 12 } }),
     }));
     render(<BudgetPanel snapshot={two()} now={now} />);
-    await screen.findByText(/Claude Code: even split across the remaining days \(no weekday pattern beat the flat baseline\)/);
-    expect(screen.getByText(/Claude Code:.*tokens per percent from 6 readings over 22 days; usage-prediction error 42\.5\d*M tokens a day over 16 test days \(flat baseline 42\.5\d*M\)\./)).toBeInTheDocument();
-    expect(screen.getByText(/Codex: weekday regression \(shrinkage 0\.5\);.*error 1\.5\d*M tokens a day over 12 test days \(flat baseline 2\.0\d*M\)/)).toBeInTheDocument();
+    await screen.findByText(/How it is forecast: a small regression model \(ridge-style\)/);
+    expect(screen.getByText(/Loss \(mean absolute error on days it had not seen\): Claude Code 42\.5\d*M tokens a day against 42\.5\d*M for a flat guess over 16 days; Codex 1\.5\d*M tokens a day against 2\.0\d*M for a flat guess over 12 days\./)).toBeInTheDocument();
+    expect(screen.getByText(/Codex: the weekday pattern beat the flat guess, so heavier days get a bigger share\./)).toBeInTheDocument();
+    expect(screen.getByText(/Claude Code: no weekday pattern beat the flat guess, so days are weighted evenly\./)).toBeInTheDocument();
+  });
+  it("says the suggestion comes from the weekly limits", async () => {
+    vi.spyOn(api, "forecast").mockResolvedValue(forecast({ claude: part(5000), codex: part(3000) }));
+    render(<BudgetPanel snapshot={two()} now={now} />);
+    expect(await screen.findByText(/Suggested daily budget from your weekly limits:/)).toBeInTheDocument();
+    expect(screen.getByText(/makes your remaining weekly limit last until it resets/)).toBeInTheDocument();
   });
   it("says so when accuracy has not been measured yet", async () => {
     vi.spyOn(api, "forecast").mockResolvedValue(forecast({ claude: part(5000, { backtest: null, days_used: 9 }), codex: part(3000) }));
     render(<BudgetPanel snapshot={two()} now={now} />);
-    expect(await screen.findByText(/Claude Code: even split across the remaining days; tokens per percent from 6 readings over 9 days; accuracy not measured yet \(needs 18 days of history\)\./)).toBeInTheDocument();
+    expect(await screen.findByText(/Claude Code: too few days to score yet \(needs 18\), so days are weighted evenly\./)).toBeInTheDocument();
   });
-  it("labels a provider the forecast could not budget as an even split", async () => {
+  it("explains by-type calibration with its held-out error and the days within budget", async () => {
+    vi.spyOn(api, "forecast").mockResolvedValue(forecast({
+      claude: part(5000),
+      codex: part(3000, { calibration_kind: "by_type", calibration_readings: 70,
+        rolling: { mae_points: 1.62, single_mae_points: 2.22, readings: 64 }, budget_check: { within: 14, scored: 20 } }),
+    }));
+    render(<BudgetPanel snapshot={two()} now={now} />);
+    expect(await screen.findByText(/Codex: learns how much each kind of token \(new input, cached input, output\) costs your limit/)).toBeInTheDocument();
+    expect(screen.getByText(/predicted past weekly-limit changes within 1\.6 points \(one ratio: 2\.2\) over 64 readings/)).toBeInTheDocument();
+    expect(screen.getByText(/you stayed within the day's budget on 14 of 20 past days/)).toBeInTheDocument();
+  });
+  it("uses the singular for one reading", async () => {
+    vi.spyOn(api, "forecast").mockResolvedValue(forecast({
+      claude: part(5000, { rolling: { mae_points: 1.55, single_mae_points: 1.55, readings: 1 } }), codex: part(3000) }));
+    render(<BudgetPanel snapshot={two()} now={now} />);
+    expect(await screen.findByText(/\(one ratio: 1\.6\) over 1 reading[;.]/)).toBeInTheDocument();
+  });
+  it("says a provider uses one ratio when the detailed method was not used", async () => {
+    vi.spyOn(api, "forecast").mockResolvedValue(forecast({ claude: part(5000), codex: part(3000) }));
+    render(<BudgetPanel snapshot={two()} now={now} />);
+    expect(await screen.findByText(/Claude Code: uses one tokens-per-percent ratio \(too few readings, or the detailed method was not more accurate\)/)).toBeInTheDocument();
+    expect(screen.queryByText(/predicted past weekly-limit changes/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/stayed within the day's budget/)).not.toBeInTheDocument();
+  });
+  it("labels a provider the forecast could not budget as a simple estimate", async () => {
     vi.spyOn(api, "forecast").mockResolvedValue(
       forecast({ claude: part(5000), codex: part(null, { excluded: "insufficient_data" }) }),
     );
     render(<BudgetPanel snapshot={two()} now={now} />);
     await waitFor(() => expect(screen.getByTestId("budget-zone-claude")).toHaveStyle({ flexGrow: "5000" }));
     expect(screen.getByTestId("budget-zone-codex")).toHaveStyle({ flexGrow: "3000" });
-    expect(screen.getByText(/Codex 3\.0k \(even split\)/)).toBeInTheDocument();
-    expect(screen.queryByText(/^Codex:/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Codex 3\.0k \(simple estimate\)/)).toBeInTheDocument();
+    expect(screen.getByText(/Codex: too little history for the forecast, so a simple estimate from this week's usage is used\./)).toBeInTheDocument();
   });
   it("keeps today's suggestion when the forecast request fails", async () => {
     const spy = vi.spyOn(api, "forecast").mockRejectedValue(new Error("down"));

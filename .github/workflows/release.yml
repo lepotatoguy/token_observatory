@@ -62,8 +62,7 @@ jobs:
           python -m pytest -q
       - name: Build
         run: |
-          # The floating widget is optional; drop Qt so the released build stays small.
-          python -m pip uninstall -y PySide6-Essentials PySide6
+          # Qt stays installed so PyInstaller bundles the floating widget runtime.
           python -m pip install pyinstaller==6.11.1
           pyinstaller --noconfirm packaging/token_observatory.spec
       - name: Package and smoke-test (macOS)

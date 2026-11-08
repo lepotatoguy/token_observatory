@@ -50,6 +50,9 @@
 .settings-field{display:grid;gap:8px;margin-bottom:14px}.settings-field select{padding:10px;border:1px solid var(--line);border-radius:6px;background:var(--paper);color:var(--ink)}
 .limit-preferences{display:block}.limit-action{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:10px 0}.limit-action>label{display:flex;align-items:center;gap:8px;flex:initial;min-width:0}.limit-action input[type=checkbox]{width:auto}.limit-action .threshold-field{width:110px;flex-shrink:0}.limit-action input[type=number]:disabled{opacity:.4}
 #settingsDialog{width:min(620px,calc(100vw - 32px))}
+.warmup-card{border:1px solid var(--line);border-radius:8px;padding:10px 12px 12px;margin:0 0 12px;background:var(--paper)}.warmup-card legend{padding:0 6px;font-size:13px;font-weight:600}
+.warmup-times{list-style:none;margin:10px 0 0;padding:0;display:flex;gap:8px;flex-wrap:wrap}.warmup-times li{display:flex;align-items:center;gap:6px;padding:4px 6px 4px 10px;border:1px solid var(--line);border-radius:16px;font-size:13px;color:var(--ink);font-variant-numeric:tabular-nums}.warmup-remove{padding:2px 8px;font-size:11px;border:1px solid var(--line);border-radius:12px;background:transparent;color:var(--muted);cursor:pointer}.warmup-remove:hover{color:var(--ink)}
+.warmup-add{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-top:12px}.warmup-add label{display:grid;gap:4px;font-size:12px;color:var(--muted)}.warmup-add input[type=time]{padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--paper);color:var(--ink);font-size:14px;opacity:1}
 
 /* MiniMax uses the shared provider layouts and its own accessible accent. */
 :root{--minimax:#8270bc}

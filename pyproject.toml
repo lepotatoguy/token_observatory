@@ -4,15 +4,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "token-observatory"
-version = "1.6.1"
+version = "1.7.0"
 description = "Loopback dashboard for local AI token usage"
 requires-python = ">=3.10"
-dependencies = ["flask>=3.1,<4", "pydantic>=2,<3", "requests>=2,<3"]
+# The floating widget draws itself with Qt, which runs the same on macOS, Windows and Linux.
+dependencies = ["flask>=3.1,<4", "pydantic>=2,<3", "requests>=2,<3", "PySide6-Essentials>=6.5,<7"]
 
 [project.optional-dependencies]
 test = ["pytest>=8,<10"]
-# The floating widget draws itself with Qt, which runs the same on macOS, Windows and Linux.
-float = ["PySide6-Essentials>=6.5,<7"]
+# Kept so existing `pip install '.[float]'` commands still work; Qt is now a core dependency.
+float = []
 
 [tool.setuptools.packages.find]
 include = ["backend", "backend.*"]

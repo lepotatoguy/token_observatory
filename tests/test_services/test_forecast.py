@@ -183,3 +183,52 @@ def test_without_a_folder_nothing_is_saved_and_the_model_stays_in_memory(fits):
     service.payload(now=NOW)
     service.payload(now=NOW + 5)
     assert len(fits) == 1
+
+
+def stored(tmp_path):
+    return json.loads((tmp_path / 'forecast.json').read_text())['providers']['claude']
+
+
+def test_the_model_stores_the_calibration_method_and_its_scores(tmp_path):
+    body = forecast.Forecaster(FakeStore(), tmp_path).payload(now=NOW)
+    claude = stored(tmp_path)
+    model = claude['calibration_model']
+    assert (model['kind'], model['weights'], model['readings']) == ('single', None, 5)
+    assert model['loo_single'] is not None and model['loo_by_type'] is None
+    assert claude['rolling'] is None and claude['budget_check'] is None   # Five pairs and no reset times: nothing to score.
+    entry = body['providers']['claude']
+    assert (entry['calibration_kind'], entry['calibration_readings'], entry['rolling'], entry['budget_check']) == ('single', 5, None, None)
+
+
+def patch_choice(monkeypatch, weights, mix=(0.5, 0.5, 0.0, 0.0)):
+    from backend.services import forecast_weights as fw
+    monkeypatch.setattr(fw, 'choose', lambda pairs: fw.Calibration('by_type', weights, len(pairs), 2.0, 1.0))
+    monkeypatch.setattr(fw, 'recent_mix', lambda index, today, days=7: mix)
+
+
+def test_the_by_type_choice_stores_the_effective_tokens_per_percent(tmp_path, monkeypatch):
+    patch_choice(monkeypatch, (3.0, 0.1, 1.5, 40.0))
+    body = forecast.Forecaster(FakeStore(), tmp_path).payload(now=NOW)
+    claude = stored(tmp_path)
+    assert claude['tokens_per_percent'] == pytest.approx(1e6 / 1.55)
+    assert claude['calibration_model']['kind'] == 'by_type' and claude['calibration_model']['mix'] == [0.5, 0.5, 0.0, 0.0]
+    assert body['providers']['claude']['calibration_kind'] == 'by_type'
+
+
+def test_weights_that_cost_nothing_fall_back_to_the_single_ratio(tmp_path, monkeypatch):
+    patch_choice(monkeypatch, (0.0, 0.0, 0.0, 0.0))
+    forecast.Forecaster(FakeStore(), tmp_path).payload(now=NOW)
+    claude = stored(tmp_path)
+    assert claude['tokens_per_percent'] == 500
+    assert (claude['calibration_model']['kind'], claude['calibration_model']['weights']) == ('single', None)
+
+
+def test_a_saved_model_from_before_this_feature_still_answers(tmp_path):
+    old = dict(schema_version=1, date='2026-11-05', generated_at=NOW - 60, skipped_events=0, warnings=[],
+               providers=dict(claude=dict(days_used=20, confidence='normal', tokens_per_percent=500.0, calibration_pairs=5,
+                                          demand=dict(method='flat', weekday_weights=[1.0] * 7, shrinkage=0.0, backtest=None))))
+    (tmp_path / 'forecast.json').write_text(json.dumps(old))
+    entry = forecast.Forecaster(FakeStore(), tmp_path).payload(now=NOW)['providers']['claude']
+    assert entry['daily'] == round(500 * 70 / 3.5)
+    assert (entry['calibration_kind'], entry['rolling'], entry['budget_check']) == (None, None, None)
+    assert entry['calibration_readings'] == 5

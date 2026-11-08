@@ -143,3 +143,23 @@ def test_malformed_limits_are_ignored():
     limits = dict(codex='bad', claude=dict(secondary='bad', observed_at=1.0), minimax=dict(secondary=weekly(None), observed_at=1.0))
     history = collect(snap(limits=limits))
     assert history.samples == {}
+
+
+def test_typed_rows_split_each_event_into_four_types_and_sum_to_the_total():
+    event = dict(at=at(day(1)), input=1, cached=2, write=3, output=4, reasoning=9)
+    history = collect(snap(session('a', [event])))
+    assert history.typed['claude'] == [(event['at'], 1, 2, 3, 4)]
+    assert [tokens for _, tokens in history.events['claude']] == [sum(row[1:]) for row in history.typed['claude']]
+
+
+def test_typed_rows_follow_the_same_dedup_and_skip_events_without_a_time():
+    old = snap(session('a', [dict(ev(day(2), 5), cached=7)]))
+    live = snap(session('a', [dict(ev(day(2), 5), cached=7), ev(day(1), 3)]),
+                session('b', [dict(at=None, input=99, cached=0, write=0, output=0)]))
+    history = collect(live, FakeArchive({day(1).isoformat(): old}))
+    assert [row[1:] for row in history.typed['claude']] == [(5, 7, 0, 0), (3, 0, 0, 0)]
+    assert history.skipped_events == 1
+
+
+def test_a_provider_without_events_has_no_typed_rows():
+    assert 'codex' not in collect(snap(session('a', [ev(day(1), 1)]))).typed
