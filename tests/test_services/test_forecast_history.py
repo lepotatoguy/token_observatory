@@ -163,3 +163,21 @@ def test_typed_rows_follow_the_same_dedup_and_skip_events_without_a_time():
 
 def test_a_provider_without_events_has_no_typed_rows():
     assert 'codex' not in collect(snap(session('a', [ev(day(1), 1)]))).typed
+
+
+def test_a_clean_session_and_the_careful_path_give_the_same_rows():
+    clean = [dict(ev(day(n), 5 * n), cached=n, write=2 * n, output=3 * n) for n in range(1, 6)]
+    odd = dict(at=at(day(1)), input=True, cached=1.9, write=-4, output=None)  # Forces the per-event path.
+    fast = collect(snap(session('a', clean)))
+    slow = collect(snap(session('a', clean + [odd])))
+    expected = [row for row in slow.typed['claude'] if row != (odd['at'], 1, 1, 0, 0)]
+    assert fast.typed['claude'] == expected
+    assert (odd['at'], 1, 1, 0, 0) in slow.typed['claude']  # bool -> 1, 1.9 -> 1, negative -> 0, None -> 0
+
+
+def test_events_outside_the_window_or_not_finite_are_never_taken_by_the_bulk_path():
+    old = ev(day(40), 7)
+    nan = dict(ev(day(1), 3), at=float('nan'))
+    history = collect(snap(session('a', [ev(day(1), 4), old, nan])))
+    assert [row[1] for row in history.typed['claude']] == [4]
+    assert history.skipped_events == 1
