@@ -8,6 +8,7 @@ from backend.services import forecast
 from backend.services.archive import Archive
 
 NOW = dt.datetime(2026, 11, 5, 12, 0).timestamp()
+COLD_FIT_LIMIT = 2.5  # Cold fit time as a multiple of the time spent reading the archive.
 EVENTS_PER_FILE = 40_000  # About 5 MB of JSON per daily file.
 
 
@@ -55,5 +56,8 @@ def test_a_cold_fit_over_thirty_five_megabyte_days_is_quick_and_a_warm_request_i
     warm = time.perf_counter() - started
 
     assert body['providers']['claude']['days_used'] == 30
-    assert cold < 3, f'cold fit took {cold:.2f}s, of which {loads[0]:.2f}s was reading the archive'
+    # Reading the archive sets a floor that depends on the machine, so bound the fit relative to it.
+    # Native runners measured 1.8x to 2.2x; a fit that regresses to 3x or more fails here.
+    assert cold < COLD_FIT_LIMIT * loads[0], \
+        f'cold fit took {cold:.2f}s, {cold / loads[0]:.1f}x the {loads[0]:.2f}s spent reading the archive (limit {COLD_FIT_LIMIT}x)'
     assert warm < 0.05, f'warm request took {warm:.3f}s'
